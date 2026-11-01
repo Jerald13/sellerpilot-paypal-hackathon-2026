@@ -61,10 +61,10 @@ public static class PayPalFixtures
         string orderId = OrderId,
         string? capture = null,
         IEnumerable<string>? refunds = null,
-        string description = "Blue batik silk scarf",
+        string description = "Blue silk scarf",
         string amount = "45.00",
         string currency = "USD",
-        string email = "aisha.buyer@example.com") => $$"""
+        string email = "amy.buyer@example.com") => $$"""
         {
           "id": "{{orderId}}",
           "status": "COMPLETED",
@@ -73,7 +73,7 @@ public static class PayPalFixtures
             "paypal": {
               "email_address": "{{email}}",
               "account_id": "QYR5Z8XDVJNXQ",
-              "name": { "given_name": "Test Buyer", "surname": "Aisha" },
+              "name": { "given_name": "Test Buyer", "surname": "Amy" },
               "address": { "country_code": "US" }
             }
           },
@@ -84,9 +84,9 @@ public static class PayPalFixtures
               "description": {{JsonSerializer.Serialize(description)}},
               "amount": { "currency_code": "{{currency}}", "value": "{{amount}}" },
               "items": [
-                { "name": "Batik scarf", "quantity": "1", "unit_amount": { "currency_code": "{{currency}}", "value": "{{amount}}" } }
+                { "name": "Silk scarf", "quantity": "1", "unit_amount": { "currency_code": "{{currency}}", "value": "{{amount}}" } }
               ],
-              "shipping": { "name": { "full_name": "Test Buyer Aisha" }, "address": { "address_line_1": "1 Main St", "country_code": "US" } },
+              "shipping": { "name": { "full_name": "Test Buyer Amy" }, "address": { "address_line_1": "1 Main St", "country_code": "US" } },
               "payments": {
                 "captures": [ {{capture ?? Capture(orderId: orderId, amount: amount, currency: currency)}} ],
                 "refunds": [ {{string.Join(",", refunds ?? [])}} ]
@@ -94,7 +94,7 @@ public static class PayPalFixtures
             }
           ],
           "payer": {
-            "name": { "given_name": "Test Buyer", "surname": "Aisha" },
+            "name": { "given_name": "Test Buyer", "surname": "Amy" },
             "email_address": "{{email}}",
             "payer_id": "QYR5Z8XDVJNXQ",
             "address": { "country_code": "US" }

@@ -300,7 +300,7 @@ public sealed class SandboxSeeder(IHttpClientFactory httpClientFactory, IPayPalT
         {
             ["experience_context"] = new JsonObject
             {
-                ["brand_name"] = "Batik by the Sea (SellerPilot demo)",
+                ["brand_name"] = "Emma's Textile Studio (SellerPilot demo)",
                 ["shipping_preference"] = "NO_SHIPPING",
                 ["user_action"] = "PAY_NOW",
                 ["return_url"] = ReturnUrl,
@@ -366,7 +366,7 @@ public sealed class SandboxSeeder(IHttpClientFactory httpClientFactory, IPayPalT
         var body = new JsonObject
         {
             ["amount"] = MoneyJson(amount, seeded.Currency),
-            ["note_to_payer"] = "Refund from Batik by the Sea (sandbox demo)",
+            ["note_to_payer"] = "Refund from Emma's Textile Studio (sandbox demo)",
         };
         var refund = await SendAsync(HttpMethod.Post, $"v2/payments/captures/{seeded.CaptureId}/refund", body, Guid.NewGuid().ToString(), ct);
         seeded.RefundId = refund.GetProperty("id").GetString();
@@ -385,7 +385,7 @@ public sealed class SandboxSeeder(IHttpClientFactory httpClientFactory, IPayPalT
                 ["invoice_number"] = invoiceNumber,
                 ["invoice_date"] = invoiceDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 ["currency_code"] = spec.Currency,
-                ["note"] = "Thank you for shopping with Batik by the Sea!",
+                ["note"] = "Thank you for shopping with Emma's Textile Studio!",
                 ["payment_term"] = paymentTerm,
             },
             ["primary_recipients"] = new JsonArray(new JsonObject

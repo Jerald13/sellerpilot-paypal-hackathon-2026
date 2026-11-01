@@ -1,10 +1,13 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SellerPilot.Api.Agent;
+using SellerPilot.Api.Auth;
 using SellerPilot.Api.Contracts;
 
 namespace SellerPilot.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthPolicies.Seller)]
 [Route("api/chat")]
 public sealed class ChatController(IAgentService agent) : ControllerBase
 {

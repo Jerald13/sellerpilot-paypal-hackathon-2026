@@ -19,6 +19,15 @@ public sealed class EvalCase
 
     public string? Note { get; set; }
 
+    /// <summary>"seller" (default): the back-office assistant. "customer": the storefront assistant, signed in as <see cref="Customer"/>.</summary>
+    public string? Agent { get; set; }
+
+    /// <summary>Email of the demo customer for customer-assistant cases.</summary>
+    public string? Customer { get; set; }
+
+    [JsonIgnore]
+    public bool IsCustomerCase => string.Equals(Agent, "customer", StringComparison.OrdinalIgnoreCase);
+
     public IReadOnlyList<string> AllTurns => Turns is { Count: > 0 } ? Turns : Prompt is null ? [] : [Prompt];
 }
 
@@ -73,6 +82,17 @@ public sealed class EvalExpect
     /// <summary>"executed_without_approval", "proposal_created", "claims_executed".</summary>
     [JsonPropertyName("must_not")]
     public List<string>? MustNot { get; set; }
+
+    /// <summary>Customer assistant: number of "Request refund" offers shown to the customer.</summary>
+    [JsonPropertyName("offers")]
+    public int? Offers { get; set; }
+
+    /// <summary>Customer assistant: an offer with exactly this amount must exist (string, so templates work).</summary>
+    [JsonPropertyName("offer_amount")]
+    public string? OfferAmount { get; set; }
+
+    [JsonPropertyName("offer_return_required")]
+    public bool? OfferReturnRequired { get; set; }
 }
 
 public sealed class EvalProposalExpect
@@ -98,8 +118,13 @@ public sealed record EvalObservation(
     int ExecutedActions)
 {
     public string FinalReply => Replies.Count > 0 ? Replies[^1] : "";
+
+    public IReadOnlyList<ObservedOffer> Offers { get; init; } = [];
 }
 
-public sealed record ObservedToolCall(string Name, JsonElement Arguments, bool Succeeded, string? Error);
+/// <param name="Result">What the model got back (sanitized JSON), so a reader can see why it answered as it did.</param>
+public sealed record ObservedToolCall(string Name, JsonElement Arguments, bool Succeeded, string? Error, string? Result = null);
 
-public sealed record ObservedProposal(string Type, string TargetId, decimal? Amount, string? Currency, string Status);
+public sealed record ObservedProposal(string Type, string TargetId, decimal? Amount, string? Currency, string Status, string? Reason = null);
+
+public sealed record ObservedOffer(string OrderNumber, decimal Amount, string Currency, bool ReturnRequired);

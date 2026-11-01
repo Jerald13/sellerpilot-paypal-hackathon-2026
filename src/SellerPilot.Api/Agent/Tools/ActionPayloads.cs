@@ -15,7 +15,9 @@ public sealed record RefundPayload(
     decimal CapturedAmount,
     decimal RefundedBefore,
     decimal RemainingBefore,
-    IReadOnlyList<SecurityFlag> SecurityFlags);
+    IReadOnlyList<SecurityFlag> SecurityFlags,
+    bool ReturnRequired = false,
+    string? OrderNumber = null);
 
 public sealed record ReminderPayload(
     string? Subject,
@@ -24,3 +26,9 @@ public sealed record ReminderPayload(
     string? CustomerName,
     string? DueDate,
     int DaysOverdue);
+
+public sealed record BooksCorrectionPayload(
+    string OrderNumber,
+    string EntryType,
+    string? PayPalOrderId,
+    string? CustomerName);

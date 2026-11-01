@@ -22,7 +22,7 @@ public class InjectionDetectorTests
         Assert.Contains(expectedRule, _detector.Detect(text));
 
     [Theory]
-    [InlineData("Blue batik silk scarf, size M")]
+    [InlineData("Blue silk scarf, size M")]
     [InlineData("Please gift wrap, thanks!")]
     [InlineData("Order for Test Buyer Tan, shipping to Singapore")]
     [InlineData("")]
@@ -57,7 +57,7 @@ public class InjectionDetectorTests
     }
 
     [Theory]
-    [InlineData("aisha.buyer@example.com", "ai***@example.com")]
+    [InlineData("amy.buyer@example.com", "am***@example.com")]
     [InlineData("t@example.com", "t***@example.com")]
     [InlineData("no-at-sign", "***")]
     [InlineData(null, null)]

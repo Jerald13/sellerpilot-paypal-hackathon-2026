@@ -58,7 +58,7 @@ public sealed class ToolTests : IDisposable
 
     private static JsonElement Json(ToolResult result) => JsonSerializer.SerializeToElement(result.Data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
 
-    private void GivenCapture(string amount = "45.00", string status = "COMPLETED", string description = "Blue batik silk scarf", params string[] refunds)
+    private void GivenCapture(string amount = "45.00", string status = "COMPLETED", string description = "Blue silk scarf", params string[] refunds)
     {
         _paypal.GetCaptureAsync(PayPalFixtures.CaptureId, Arg.Any<CancellationToken>())
             .Returns(PayPalFixtures.Parse<PayPalCapture>(PayPalFixtures.Capture(amount: amount, status: status)));
@@ -167,8 +167,8 @@ public sealed class ToolTests : IDisposable
         var result = await tool.ExecuteAsync(Args($$"""{"order_id":"{{PayPalFixtures.OrderId.ToLowerInvariant()}}"}"""), _context, CancellationToken.None);
 
         var json = Json(result).GetRawText();
-        Assert.Contains("ai***@example.com", json);
-        Assert.DoesNotContain("aisha.buyer@example.com", json);
+        Assert.Contains("am***@example.com", json);
+        Assert.DoesNotContain("amy.buyer@example.com", json);
         Assert.DoesNotContain("1 Main St", json);
         Assert.DoesNotContain("$5000", json);
         Assert.Contains("withheld by SellerPilot", json);

@@ -13,6 +13,7 @@ using SellerPilot.Api.Data;
 using SellerPilot.Api.Guardrails;
 using SellerPilot.Api.PayPal;
 using SellerPilot.Api.PayPal.Models;
+using SellerPilot.Api.Shop;
 using SellerPilot.Tests.TestSupport;
 
 namespace SellerPilot.Tests.Approvals;
@@ -33,6 +34,7 @@ public sealed class ApprovalServiceTests : IDisposable
         new RefundStateLoader(_read, NullLogger<RefundStateLoader>.Instance),
         new RefundPolicy(Options.Create(new GuardrailOptions { MaxRefundAmount = new() { ["USD"] = 500m } }), _time),
         new AuditService(db, _time, NullLogger<AuditService>.Instance),
+        new LedgerService(db, _time),
         _time,
         NullLogger<ApprovalService>.Instance);
 
@@ -296,5 +298,97 @@ public sealed class ApprovalServiceTests : IDisposable
 
         Assert.Equal(ActionStatus.Failed, result.Action!.Status);
         Assert.Contains("outcome is unknown", result.Action.Error);
+    }
+
+    private async Task<int> AddShopOrderForCaptureAsync()
+    {
+        await using var db = _testDb.CreateContext();
+        var order = new ShopOrder
+        {
+            OrderNumber = "SP-1001",
+            Customer = new Customer { Name = "John Doe", Email = "john.doe@example.com", Country = "US" },
+            Status = ShopOrderStatus.Delivered,
+            Currency = "USD",
+            Subtotal = 45m,
+            Total = 45m,
+            PayPalOrderId = PayPalFixtures.OrderId,
+            PayPalCaptureId = PayPalFixtures.CaptureId,
+        };
+        db.ShopOrders.Add(order);
+        await db.SaveChangesAsync();
+        return order.Id;
+    }
+
+    [Fact]
+    public async Task An_executed_refund_is_posted_to_the_shop_books()
+    {
+        var orderId = await AddShopOrderForCaptureAsync();
+        var action = await AddRefundProposalAsync();
+        GivenCaptureState();
+        GivenRefundSucceeds();
+        await using var db = _testDb.CreateContext();
+
+        await CreateService(db).ApproveAsync(action.Id, CancellationToken.None);
+
+        await using var verify = _testDb.CreateContext();
+        var entry = await verify.LedgerEntries.SingleAsync();
+        Assert.Equal((orderId, LedgerEntryType.Refund, 45.00m, "1JU08902781691411", LedgerSources.SellerPilot),
+            (entry.ShopOrderId!.Value, entry.Type, entry.Amount, entry.PayPalTransactionId, entry.Source));
+        Assert.Contains(await verify.AuditLogs.Select(l => l.Event).ToListAsync(), e => e == AuditEvents.LedgerPosted);
+    }
+
+    [Fact]
+    public async Task A_refund_for_a_payment_the_shop_does_not_know_still_executes_without_a_books_entry()
+    {
+        var action = await AddRefundProposalAsync();
+        GivenCaptureState();
+        GivenRefundSucceeds();
+        await using var db = _testDb.CreateContext();
+
+        var result = await CreateService(db).ApproveAsync(action.Id, CancellationToken.None);
+
+        Assert.Equal(ActionStatus.Executed, result.Action!.Status);
+        await using var verify = _testDb.CreateContext();
+        Assert.Empty(await verify.LedgerEntries.ToListAsync());
+    }
+
+    [Fact]
+    public async Task A_refund_waiting_for_the_return_cannot_be_approved_until_the_return_is_received()
+    {
+        var action = await AddRefundProposalAsync();
+        await using (var setup = _testDb.CreateContext())
+        {
+            await setup.PendingActions.Where(a => a.Id == action.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, ActionStatus.AwaitingReturn));
+        }
+
+        GivenCaptureState();
+        GivenRefundSucceeds();
+        await using var db = _testDb.CreateContext();
+        var service = CreateService(db);
+
+        var early = await service.ApproveAsync(action.Id, CancellationToken.None);
+        Assert.Equal(DecisionOutcome.Conflict, early.Outcome);
+        Assert.Contains("waiting for the customer's return", early.Message);
+        await _write.DidNotReceiveWithAnyArgs().RefundCaptureAsync(default!, default!, default!, default);
+
+        var received = await service.MarkReturnReceivedAsync(action.Id, CancellationToken.None);
+        Assert.Equal(ActionStatus.Pending, received.Action!.Status);
+        Assert.Null(received.Action.DecidedAt);
+
+        var approved = await service.ApproveAsync(action.Id, CancellationToken.None);
+        Assert.Equal(ActionStatus.Executed, approved.Action!.Status);
+        Assert.Equal(DecisionOutcome.Conflict, (await service.MarkReturnReceivedAsync(action.Id, CancellationToken.None)).Outcome);
+    }
+
+    [Fact]
+    public async Task A_refund_waiting_for_the_return_can_be_rejected()
+    {
+        var action = await AddRefundProposalAsync();
+        await using var db = _testDb.CreateContext();
+        await db.PendingActions.Where(a => a.Id == action.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Status, ActionStatus.AwaitingReturn));
+
+        var result = await CreateService(db).RejectAsync(action.Id, CancellationToken.None);
+
+        Assert.Equal(ActionStatus.Rejected, result.Action!.Status);
     }
 }

@@ -44,6 +44,8 @@ services.AddSingleton<RecordingWriteClient>();
 services.AddSingleton<IPayPalWriteClient>(sp => sp.GetRequiredService<RecordingWriteClient>());
 await using var provider = services.BuildServiceProvider();
 await provider.MigrateSellerPilotDatabaseAsync();
+// The eval database gets the same demo shop books as the API, so reconciliation cases see the same data.
+await provider.SeedSellerPilotShopAsync(repoRoot);
 
 var llm = provider.GetRequiredService<ILlmClient>();
 if (llm is UnconfiguredLlmClient)
@@ -85,11 +87,13 @@ Console.WriteLine($"Running {selected.Count} cases with {info.Provider} {info.Mo
 
 var runner = new EvalRunner(provider, provider.GetRequiredService<RecordingWriteClient>());
 var results = new List<EvalCaseResult>();
+await EvalReport.WriteProgressAsync(resultsDirectory, info, results, CancellationToken.None);
 foreach (var rawCase in selected)
 {
     var result = await runner.RunAsync(rawCase, seed, CancellationToken.None);
     results.Add(result);
     EvalReport.PrintCase(result, Console.Out);
+    await EvalReport.WriteProgressAsync(resultsDirectory, info, results, CancellationToken.None);
     if (delay > TimeSpan.Zero)
     {
         await Task.Delay(delay);

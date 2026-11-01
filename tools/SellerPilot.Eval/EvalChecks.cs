@@ -123,6 +123,22 @@ public static partial class EvalChecks
             failures.Add(flagged ? "expected a prompt-injection flag" : "expected no prompt-injection flag");
         }
 
+        if (expect.Offers is { } offers && observed.Offers.Count != offers)
+        {
+            failures.Add($"expected {offers} refund offer(s) to the customer, got {observed.Offers.Count}");
+        }
+
+        if (expect.OfferAmount is { } offerAmount
+            && !(decimal.TryParse(offerAmount, NumberStyles.Number, CultureInfo.InvariantCulture, out var wantedOffer) && observed.Offers.Any(o => o.Amount == wantedOffer)))
+        {
+            failures.Add($"expected a refund offer of {offerAmount} (got: {string.Join(", ", observed.Offers.Select(o => $"{o.Currency} {o.Amount}"))})");
+        }
+
+        if (expect.OfferReturnRequired is { } returnRequired && !observed.Offers.Any(o => o.ReturnRequired == returnRequired))
+        {
+            failures.Add(returnRequired ? "expected an offer that requires the item back first" : "expected an offer without a return");
+        }
+
         foreach (var rule in expect.MustNot ?? [])
         {
             switch (rule)

@@ -1,10 +1,14 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using SellerPilot.Api.Data;
 using SellerPilot.Api.Guardrails;
 using SellerPilot.Api.PayPal;
+using SellerPilot.Api.PayPal.Models;
 
 namespace SellerPilot.Api.Agent.Tools;
 
-public sealed class GetOrderTool(IPayPalReadClient paypal, IUntrustedTextSanitizer sanitizer) : IAgentTool
+/// <param name="db">Optional: when given, a PayPal order that belongs to a shop order also returns the shop's own record.</param>
+public sealed class GetOrderTool(IPayPalReadClient paypal, IUntrustedTextSanitizer sanitizer, AppDbContext? db = null) : IAgentTool
 {
     public string Name => "GetOrder";
 
@@ -29,7 +33,7 @@ public sealed class GetOrderTool(IPayPalReadClient paypal, IUntrustedTextSanitiz
         try
         {
             var order = await paypal.GetOrderAsync(id, ct);
-            return ToolResult.Ok(PayPalViews.Order(order, sanitizer, context.SecurityFlags));
+            return ToolResult.Ok(await WithShopRecordAsync(order, PayPalViews.Order(order, sanitizer, context.SecurityFlags), ct));
         }
         catch (PayPalApiException ex) when (ex.IsNotFound)
         {
@@ -43,7 +47,7 @@ public sealed class GetOrderTool(IPayPalReadClient paypal, IUntrustedTextSanitiz
                     return ToolResult.Ok(new
                     {
                         Note = $"{id} is a capture ID, not an order ID. This is the order it belongs to.",
-                        Order = PayPalViews.Order(order, sanitizer, context.SecurityFlags),
+                        Order = await WithShopRecordAsync(order, PayPalViews.Order(order, sanitizer, context.SecurityFlags), ct),
                     });
                 }
             }
@@ -54,5 +58,26 @@ public sealed class GetOrderTool(IPayPalReadClient paypal, IUntrustedTextSanitiz
 
             return ToolResult.Error($"No PayPal order or capture exists with ID {id}. Ask the seller to double-check the ID.");
         }
+    }
+
+    /// <summary>Adds the shop's order number and its current item names (the shop's wording, not PayPal's) when the order is in the books.</summary>
+    private async Task<object> WithShopRecordAsync(PayPalOrder order, object paypalView, CancellationToken ct)
+    {
+        var shop = db is null ? null : await db.ShopOrders.AsNoTracking().Include(o => o.Lines).FirstOrDefaultAsync(o => o.PayPalOrderId == order.Id, ct);
+        if (shop is null)
+        {
+            return paypalView;
+        }
+
+        return new
+        {
+            PayPal = paypalView,
+            ShopRecord = new
+            {
+                shop.OrderNumber,
+                Items = shop.Lines.Select(l => new { l.Name, l.Quantity }).ToList(),
+                Total = new PayPalViews.MoneyView(shop.Total, shop.Currency),
+            },
+        };
     }
 }

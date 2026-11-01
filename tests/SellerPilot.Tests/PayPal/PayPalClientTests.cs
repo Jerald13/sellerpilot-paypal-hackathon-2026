@@ -49,7 +49,7 @@ public class PayPalClientTests
         Assert.Equal(45.00m, amount);
         var refund = Assert.Single(unit.Payments.Refunds!);
         Assert.Equal(PayPalFixtures.CaptureId, refund.CaptureId);
-        Assert.Equal("Test Buyer Aisha", order.Payer!.Name!.FullName);
+        Assert.Equal("Test Buyer Amy", order.Payer!.Name!.FullName);
     }
 
     [Fact]
@@ -163,7 +163,7 @@ public class PayPalClientTests
     public async Task Transaction_search_uses_utc_window_and_parses_offsets_without_colon()
     {
         _handler.Respond(HttpStatusCode.OK, """
-            {"transaction_details":[{"transaction_info":{"transaction_id":"3C679366HH908993F","transaction_event_code":"T0006","transaction_initiation_date":"2026-10-20T10:00:00+0000","transaction_amount":{"currency_code":"USD","value":"45.00"},"transaction_status":"S"},"payer_info":{"email_address":"aisha.buyer@example.com","payer_name":{"given_name":"Test Buyer","surname":"Aisha"}}}],"page":1,"total_items":1,"total_pages":1}
+            {"transaction_details":[{"transaction_info":{"transaction_id":"3C679366HH908993F","transaction_event_code":"T0006","transaction_initiation_date":"2026-10-20T10:00:00+0000","transaction_amount":{"currency_code":"USD","value":"45.00"},"transaction_status":"S"},"payer_info":{"email_address":"amy.buyer@example.com","payer_name":{"given_name":"Test Buyer","surname":"Amy"}}}],"page":1,"total_items":1,"total_pages":1}
             """);
 
         var result = await _client.SearchTransactionsAsync(

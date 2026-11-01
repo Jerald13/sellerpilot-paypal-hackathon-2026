@@ -25,7 +25,8 @@ public sealed record AgentTurnResult(
     bool StepLimitReached,
     bool Refused,
     LlmUsage? Usage = null,
-    string? Model = null);
+    string? Model = null,
+    IReadOnlyList<RefundOffer>? RefundOffers = null);
 
 public interface IAgentService
 {
@@ -53,15 +54,23 @@ public sealed class AgentService : IAgentService
     private readonly IAuditService _audit;
     private readonly AgentOptions _options;
     private readonly ILogger<AgentService> _logger;
+    private readonly string _systemPrompt;
+    private readonly string _participant;
 
+    /// <param name="systemPrompt">Defaults to the seller assistant's prompt.</param>
+    /// <param name="participant">Who writes the user messages ("Seller" or "Customer"); used when a long chat is shortened.</param>
     public AgentService(
         ILlmClient llm,
         IEnumerable<IAgentTool> tools,
         IConversationStore conversations,
         IAuditService audit,
         IOptions<AgentOptions> options,
-        ILogger<AgentService> logger)
+        ILogger<AgentService> logger,
+        string? systemPrompt = null,
+        string participant = "Seller")
     {
+        _systemPrompt = systemPrompt ?? SystemPrompt.Text;
+        _participant = participant;
         _llm = llm;
         _tools = tools.ToList();
         _toolDefinitions = _tools.Select(t => new LlmToolDefinition(t.Name, t.Description, t.InputSchema)).ToList();
@@ -104,7 +113,7 @@ public sealed class AgentService : IAgentService
         if (conversation.Messages.Count >= _options.MaxHistoryMessages)
         {
             // Simple compaction: replace earlier turns with a short text recap and replay nothing else.
-            working.Add(LlmMessage.User(BuildRecap(conversation.Messages) + text));
+            working.Add(LlmMessage.User(BuildRecap(conversation.Messages, _participant) + text));
         }
         else
         {
@@ -123,7 +132,7 @@ public sealed class AgentService : IAgentService
 
         for (var iteration = 1; ; iteration++)
         {
-            var response = await _llm.CompleteAsync(new LlmRequest(SystemPrompt.Text, working, _toolDefinitions), ct);
+            var response = await _llm.CompleteAsync(new LlmRequest(_systemPrompt, working, _toolDefinitions), ct);
             usage = LlmUsage.Add(usage, response.Usage);
             model = response.Model;
 
@@ -201,7 +210,7 @@ public sealed class AgentService : IAgentService
             await _audit.LogAsync(AuditActors.System, AuditEvents.InjectionSuspected, new { conversationId = conversation.Id, flags }, ct);
         }
 
-        return new AgentTurnResult(conversation.Id, reply, context.ProposedActions, records, flags, stepLimitReached, refused, usage, model);
+        return new AgentTurnResult(conversation.Id, reply, context.ProposedActions, records, flags, stepLimitReached, refused, usage, model, context.RefundOffers);
     }
 
     private async Task<LlmToolResult> ExecuteToolAsync(LlmToolCall call, ToolContext context, List<ToolCallRecord> records, CancellationToken ct)
@@ -282,14 +291,14 @@ public sealed class AgentService : IAgentService
     private static LlmToolResult ErrorResult(LlmToolCall call, string message) =>
         new(call.Id, call.Name, JsonSerializer.Serialize(new { Ok = false, Data = new ToolError(message, null) }, ToolJson), IsError: true);
 
-    private static string BuildRecap(IReadOnlyList<LlmMessage> history)
+    private static string BuildRecap(IReadOnlyList<LlmMessage> history, string participant)
     {
         var lines = history
             .Where(m => !string.IsNullOrWhiteSpace(m.Text) && m.ToolResults is null)
             .TakeLast(8)
-            .Select(m => $"{(m.Role == LlmRole.User ? "Seller" : "SellerPilot")}: {(m.Text!.Length > 400 ? m.Text[..400] + "…" : m.Text)}");
+            .Select(m => $"{(m.Role == LlmRole.User ? participant : "Assistant")}: {(m.Text!.Length > 400 ? m.Text[..400] + "…" : m.Text)}");
         return "(This conversation was shortened. Recent messages, for context only:\n"
                + string.Join("\n", lines)
-               + "\n)\n\nThe seller's new message: ";
+               + $"\n)\n\nThe {participant.ToLowerInvariant()}'s new message: ";
     }
 }

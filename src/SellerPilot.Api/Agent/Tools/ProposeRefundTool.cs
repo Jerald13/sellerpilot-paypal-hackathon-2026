@@ -59,7 +59,7 @@ public sealed class ProposeRefundTool(
         }
 
         var awaitingApproval = (await db.PendingActions.AsNoTracking()
-                .Where(a => a.Type == ActionType.Refund && a.TargetId == captureId && a.Status == ActionStatus.Pending)
+                .Where(a => a.Type == ActionType.Refund && a.TargetId == captureId && (a.Status == ActionStatus.Pending || a.Status == ActionStatus.AwaitingReturn))
                 .Select(a => a.Amount)
                 .ToListAsync(ct))
             .Sum(a => a ?? 0m);

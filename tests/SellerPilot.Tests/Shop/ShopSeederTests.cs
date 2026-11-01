@@ -1,0 +1,143 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using SellerPilot.Api.Data;
+using SellerPilot.Tests.TestSupport;
+
+namespace SellerPilot.Tests.Shop;
+
+public sealed class ShopSeederTests : IDisposable
+{
+    private readonly TestDb _testDb = new();
+    private readonly FixedTimeProvider _time = new(PayPalFixtures.Now);
+
+    public void Dispose() => _testDb.Dispose();
+
+    private async Task<List<ShopOrder>> OrdersAsync()
+    {
+        await using var db = _testDb.CreateContext();
+        return await db.ShopOrders.Include(o => o.Customer).Include(o => o.Lines).Include(o => o.LedgerEntries).OrderBy(o => o.OrderNumber).ToListAsync();
+    }
+
+    [Fact]
+    public async Task Books_are_built_on_the_sandbox_orders_with_the_planted_mismatches()
+    {
+        await ShopFixtures.SeedAsync(_testDb, _time);
+        var orders = await OrdersAsync();
+
+        // 9 linked sandbox orders + 1 historical bank-transfer order; the USD 15 keychain is deliberately missing.
+        Assert.Equal(10, orders.Count);
+        Assert.DoesNotContain(orders, o => o.PayPalOrderId == "93270599TG532911K");
+
+        var overcharged = orders.Single(o => o.OrderNumber == "SP-DVAN-1002");
+        Assert.Equal(120.00m, overcharged.Subtotal);
+        Assert.Equal(12.00m, overcharged.Discount);
+        Assert.Equal(108.00m, overcharged.Total);
+        Assert.Equal(120.00m, overcharged.LedgerEntries.Single(e => e.Type == LedgerEntryType.Payment).Amount);
+
+        var refundedInDashboard = orders.Single(o => o.OrderNumber == "SP-DVAN-1005");
+        Assert.DoesNotContain(refundedInDashboard.LedgerEntries, e => e.Type == LedgerEntryType.Refund);
+
+        var partlyRefunded = orders.Single(o => o.OrderNumber == "SP-DVAN-1006");
+        var refund = partlyRefunded.LedgerEntries.Single(e => e.Type == LedgerEntryType.Refund);
+        Assert.Equal(("9YK317787A915471L", 30.00m), (refund.PayPalTransactionId, refund.Amount));
+
+        var shippedButPending = orders.Single(o => o.OrderNumber == "SP-DVAN-1003");
+        Assert.Equal(ShopOrderStatus.Shipped, shippedButPending.Status);
+        Assert.Single(shippedButPending.LedgerEntries, e => e.Type == LedgerEntryType.Payment);
+
+        var awaiting = orders.Single(o => o.OrderNumber == "SP-DVAN-1010");
+        Assert.Equal(ShopOrderStatus.AwaitingPayment, awaiting.Status);
+        Assert.Empty(awaiting.LedgerEntries);
+
+        var finalSale = orders.Single(o => o.OrderNumber == "SP-DVAN-1004");
+        Assert.Equal(0, finalSale.Lines.Single().ReturnWindowDays);
+        Assert.Equal("Chloe Bennett", finalSale.Customer!.Name);
+
+        var history = orders.Single(o => o.OrderNumber == "SP-HIST-0830");
+        Assert.Equal(PaymentMethod.BankTransfer, history.PaymentMethod);
+        Assert.Null(history.PayPalOrderId);
+        Assert.Equal(new DateTime(2026, 9, 4, 14, 0, 0, DateTimeKind.Utc), history.DeliveredAt);
+    }
+
+    [Fact]
+    public async Task Refunds_SellerPilot_already_executed_are_posted_to_the_books()
+    {
+        await using (var db = _testDb.CreateContext())
+        {
+            db.PendingActions.Add(new PendingAction
+            {
+                Id = Guid.NewGuid(),
+                Type = ActionType.Refund,
+                TargetId = "6YM65696F5973222C",
+                Amount = 45.00m,
+                Currency = "USD",
+                Status = ActionStatus.Executed,
+                PayPalResultId = "44527045F66134616",
+                CreatedAt = _time.GetUtcNow().UtcDateTime,
+                DecidedAt = _time.GetUtcNow().UtcDateTime,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await ShopFixtures.SeedAsync(_testDb, _time);
+
+        var scarf = (await OrdersAsync()).Single(o => o.OrderNumber == "SP-DVAN-1001");
+        var refund = scarf.LedgerEntries.Single(e => e.Type == LedgerEntryType.Refund);
+        Assert.Equal(("44527045F66134616", 45.00m, LedgerSources.SellerPilot), (refund.PayPalTransactionId, refund.Amount, refund.Source));
+    }
+
+    [Fact]
+    public async Task Seeding_twice_does_not_duplicate_anything()
+    {
+        await ShopFixtures.SeedAsync(_testDb, _time);
+        await ShopFixtures.SeedAsync(_testDb, _time);
+
+        await using var db = _testDb.CreateContext();
+        Assert.Equal(4, await db.Customers.CountAsync());
+        Assert.Equal(10, await db.ShopOrders.CountAsync());
+    }
+
+    [Fact]
+    public async Task A_database_seeded_with_old_product_names_gets_the_current_English_names()
+    {
+        await ShopFixtures.SeedAsync(_testDb, _time);
+        await using (var db = _testDb.CreateContext())
+        {
+            // As seeded before the catalogue was renamed.
+            var product = await db.Products.SingleAsync(p => p.Sku == "WRAP");
+            (product.Sku, product.Name) = ("SARONG", "Hand-stamped batik sarong");
+            var line = await db.ShopOrderLines.SingleAsync(l => l.Sku == "WRAP");
+            (line.Sku, line.Name) = ("SARONG", "Hand-stamped batik sarong");
+            (await db.Products.SingleAsync(p => p.Sku == "SCARF-BLUE")).Name = "Blue batik silk scarf";
+            await db.SaveChangesAsync();
+        }
+
+        await ShopFixtures.SeedAsync(_testDb, _time);
+
+        await using var verify = _testDb.CreateContext();
+        Assert.Equal("Hand-stamped cotton wrap", (await verify.Products.SingleAsync(p => p.Sku == "WRAP")).Name);
+        Assert.Equal("Hand-stamped cotton wrap", (await verify.ShopOrderLines.SingleAsync(l => l.Sku == "WRAP")).Name);
+        Assert.Equal("Blue silk scarf", (await verify.Products.SingleAsync(p => p.Sku == "SCARF-BLUE")).Name);
+        Assert.DoesNotContain(await verify.Products.Select(p => p.Name).ToListAsync(), n => n.Contains("batik", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Customers_get_a_hashed_demo_password_only_when_one_is_configured()
+    {
+        await using (var db = _testDb.CreateContext())
+        {
+            await ShopFixtures.Seeder(db, _time, password: null).SeedAsync(ShopFixtures.Seed(), CancellationToken.None);
+            Assert.All(await db.Customers.ToListAsync(), c => Assert.Null(c.PasswordHash));
+        }
+
+        // Configured later: the next startup hashes it.
+        await using (var db = _testDb.CreateContext())
+        {
+            await ShopFixtures.Seeder(db, _time).SeedAsync(ShopFixtures.Seed(), CancellationToken.None);
+            var john = await db.Customers.SingleAsync(c => c.Email == "john.doe@example.com");
+            Assert.NotNull(john.PasswordHash);
+            Assert.DoesNotContain(ShopFixtures.DemoPassword, john.PasswordHash);
+            Assert.NotEqual(PasswordVerificationResult.Failed, new PasswordHasher<Customer>().VerifyHashedPassword(john, john.PasswordHash!, ShopFixtures.DemoPassword));
+        }
+    }
+}

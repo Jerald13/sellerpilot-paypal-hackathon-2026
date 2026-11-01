@@ -25,6 +25,9 @@ public sealed class ToolContext
 
     public List<PendingAction> ProposedActions { get; } = [];
 
+    /// <summary>Customer assistant only: refunds the customer may request with a button.</summary>
+    public List<RefundOffer> RefundOffers { get; } = [];
+
     public SecurityFlagCollector SecurityFlags { get; } = new();
 }
 

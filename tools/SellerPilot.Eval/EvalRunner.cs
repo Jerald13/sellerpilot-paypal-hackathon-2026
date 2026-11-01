@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SellerPilot.Api.Agent;
 using SellerPilot.Api.Data;
+using SellerPilot.Api.Llm;
 
 namespace SellerPilot.Eval;
 
@@ -17,6 +18,13 @@ public sealed record EvalCaseResult(
     EvalObservation? Observation,
     long DurationMs)
 {
+    public LlmUsage? Usage { get; init; }
+
+    public string? Model { get; init; }
+
+    /// <summary>Estimated from token counts and list prices; null for models without a known price.</summary>
+    public decimal? CostUsd { get; init; }
+
     public const string Pass = "PASS";
     public const string Fail = "FAIL";
     public const string Skip = "SKIP";
@@ -49,31 +57,57 @@ public sealed class EvalRunner(IServiceProvider services, RecordingWriteClient w
         // Each case starts with an empty proposal queue so cases don't influence each other.
         await db.PendingActions.ExecuteDeleteAsync(ct);
 
+        int? customerId = null;
+        if (evalCase.IsCustomerCase)
+        {
+            var email = evalCase.Customer?.Trim().ToLowerInvariant();
+            customerId = (await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Email == email, ct))?.Id;
+            if (customerId is null)
+            {
+                return new EvalCaseResult(evalCase.Id, evalCase.Category, EvalCaseResult.Skip,
+                    [$"demo customer {evalCase.Customer} not found (the shop data is built from seed-output.json)"], evalCase.AllTurns, null, 0);
+            }
+        }
+
+        var customerAgent = scope.ServiceProvider.GetRequiredService<ICustomerAgentService>();
         var replies = new List<string>();
         var toolCalls = new List<ObservedToolCall>();
         var proposals = new List<ObservedProposal>();
+        var offers = new List<ObservedOffer>();
         var flags = 0;
+        LlmUsage? usage = null;
+        string? model = null;
         Guid? conversationId = null;
         try
         {
             foreach (var turn in evalCase.AllTurns)
             {
-                var result = await agent.HandleMessageAsync(conversationId, turn, ct);
+                var result = customerId is { } customer
+                    ? await customerAgent.HandleMessageAsync(customer, conversationId, turn, ct)
+                    : await agent.HandleMessageAsync(conversationId, turn, ct);
                 conversationId = result.ConversationId;
                 replies.Add(result.Reply);
-                toolCalls.AddRange(result.ToolCalls.Select(c => new ObservedToolCall(c.Name, c.Arguments, c.Succeeded, c.Error)));
-                proposals.AddRange(result.ProposedActions.Select(a => new ObservedProposal(a.Type.ToString(), a.TargetId, a.Amount, a.Currency, a.Status.ToString())));
+                toolCalls.AddRange(result.ToolCalls.Select(c => new ObservedToolCall(c.Name, c.Arguments, c.Succeeded, c.Error, c.Result)));
+                proposals.AddRange(result.ProposedActions.Select(a => new ObservedProposal(a.Type.ToString(), a.TargetId, a.Amount, a.Currency, a.Status.ToString(), a.Reason)));
+                offers.AddRange((result.RefundOffers ?? []).Select(o => new ObservedOffer(o.OrderNumber, o.Amount, o.Currency, o.ReturnRequired)));
                 flags += result.SecurityFlags.Count;
+                usage = LlmUsage.Add(usage, result.Usage);
+                model = result.Model ?? model;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var partial = new EvalObservation(replies, toolCalls, proposals, flags, writes.Attempts - writesBefore, 0);
-            return new EvalCaseResult(evalCase.Id, evalCase.Category, EvalCaseResult.Error, [$"{ex.GetType().Name}: {ex.Message}"], evalCase.AllTurns, partial, stopwatch.ElapsedMilliseconds);
+            var partial = new EvalObservation(replies, toolCalls, proposals, flags, writes.Attempts - writesBefore, 0) { Offers = offers };
+            return new EvalCaseResult(evalCase.Id, evalCase.Category, EvalCaseResult.Error, [$"{ex.GetType().Name}: {ex.Message}"], evalCase.AllTurns, partial, stopwatch.ElapsedMilliseconds)
+            {
+                Usage = usage,
+                Model = model,
+                CostUsd = LlmPricing.EstimateUsd(model, usage),
+            };
         }
 
         var executed = await db.PendingActions.CountAsync(a => a.Status == ActionStatus.Executed || a.Status == ActionStatus.Approved, ct);
-        var observation = new EvalObservation(replies, toolCalls, proposals, flags, writes.Attempts - writesBefore, executed);
+        var observation = new EvalObservation(replies, toolCalls, proposals, flags, writes.Attempts - writesBefore, executed) { Offers = offers };
         var failures = EvalChecks.Evaluate(evalCase.Expect, observation);
         return new EvalCaseResult(
             evalCase.Id,
@@ -82,6 +116,11 @@ public sealed class EvalRunner(IServiceProvider services, RecordingWriteClient w
             failures,
             evalCase.AllTurns,
             observation,
-            stopwatch.ElapsedMilliseconds);
+            stopwatch.ElapsedMilliseconds)
+        {
+            Usage = usage,
+            Model = model,
+            CostUsd = LlmPricing.EstimateUsd(model, usage),
+        };
     }
 }

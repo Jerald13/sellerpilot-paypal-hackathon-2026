@@ -9,6 +9,7 @@ public static class AuditActors
     public const string Agent = "agent";
     public const string Seller = "seller";
     public const string System = "system";
+    public const string Customer = "customer";
 }
 
 public static class AuditEvents
@@ -24,6 +25,13 @@ public static class AuditEvents
     public const string ActionFailed = "ActionFailed";
     public const string AgentStepLimitReached = "AgentStepLimitReached";
     public const string LlmRefusal = "LlmRefusal";
+    public const string LedgerPosted = "LedgerPosted";
+    public const string LedgerPostingFailed = "LedgerPostingFailed";
+    public const string ReturnReceived = "ReturnReceived";
+    public const string RefundRequested = "RefundRequested";
+    public const string ReconciliationRun = "ReconciliationRun";
+    public const string SignedIn = "SignedIn";
+    public const string SignInFailed = "SignInFailed";
 }
 
 public interface IAuditService

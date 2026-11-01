@@ -4,6 +4,9 @@ public enum ActionType
 {
     Refund,
     InvoiceReminder,
+
+    /// <summary>Copies a PayPal payment or refund that is missing from the shop's books into the ledger. Never calls PayPal write endpoints.</summary>
+    BooksCorrection,
 }
 
 public enum ActionStatus
@@ -13,6 +16,18 @@ public enum ActionStatus
     Rejected,
     Executed,
     Failed,
+
+    /// <summary>A customer refund that needs the item back first; the seller marks the return as received, which moves it to Pending.</summary>
+    AwaitingReturn,
+}
+
+public static class ActionRequesters
+{
+    /// <summary>Proposed by the seller's assistant.</summary>
+    public const string Agent = "agent";
+
+    /// <summary>Requested by a signed-in customer on the storefront.</summary>
+    public const string Customer = "customer";
 }
 
 /// <summary>
@@ -52,4 +67,13 @@ public class PendingAction
     public DateTime CreatedAt { get; set; }
 
     public DateTime? DecidedAt { get; set; }
+
+    /// <summary>See <see cref="ActionRequesters"/>.</summary>
+    public string RequestedBy { get; set; } = ActionRequesters.Agent;
+
+    /// <summary>The customer who asked, for customer requests.</summary>
+    public int? CustomerId { get; set; }
+
+    /// <summary>The shop order the action is about, when known.</summary>
+    public int? ShopOrderId { get; set; }
 }

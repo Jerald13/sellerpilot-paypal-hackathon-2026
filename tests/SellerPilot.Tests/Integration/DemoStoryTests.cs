@@ -19,6 +19,7 @@ namespace SellerPilot.Tests.Integration;
 /// </summary>
 public sealed class DemoStoryTests : IDisposable
 {
+    private const string SellerPassword = "it-seller-password";
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"sellerpilot-it-{Guid.NewGuid():N}.db");
     private readonly ScriptedLlmClient _llm = new();
     private readonly IPayPalReadClient _read = Substitute.For<IPayPalReadClient>();
@@ -30,6 +31,9 @@ public sealed class DemoStoryTests : IDisposable
         _factory = new WebApplicationFactory<ApiExceptionHandler>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:SellerPilot", $"Data Source={_databasePath};Pooling=False");
+            builder.UseSetting("Shop:DemoPassword", SellerPassword);
+            // No shop data in these tests (and no dependency on the developer's local seed-output.json).
+            builder.UseSetting("Shop:SeedFile", Path.Combine(Path.GetTempPath(), $"no-seed-{Guid.NewGuid():N}.json"));
             builder.ConfigureServices(services =>
             {
                 services.AddSingleton<ILlmClient>(_llm);
@@ -52,13 +56,21 @@ public sealed class DemoStoryTests : IDisposable
         File.Delete(_databasePath);
     }
 
+    private async Task<HttpClient> SellerClientAsync()
+    {
+        var http = _factory.CreateClient();
+        var login = await http.PostAsJsonAsync("/api/auth/login", new { email = "emma@sellerpilot.test", password = SellerPassword });
+        login.EnsureSuccessStatusCode();
+        return http;
+    }
+
     [Fact]
     public async Task Refund_is_proposed_by_chat_and_executed_only_after_approval()
     {
         _llm.ThenToolCalls(("GetOrder", $$"""{"order_id":"{{PayPalFixtures.OrderId}}"}"""))
             .ThenToolCalls(("ProposeRefund", $$"""{"capture_id":"{{PayPalFixtures.CaptureId}}","reason":"The scarf arrived damaged."}"""))
             .ThenText("I've proposed a full refund of USD 45.00. It is waiting for your approval.");
-        var http = _factory.CreateClient();
+        var http = await SellerClientAsync();
 
         var chat = await http.PostAsJsonAsync("/api/chat", new { message = $"Customer for order {PayPalFixtures.OrderId} wants a refund. What should I do?" });
         chat.EnsureSuccessStatusCode();
@@ -97,7 +109,7 @@ public sealed class DemoStoryTests : IDisposable
     {
         _llm.ThenToolCalls(("ProposeRefund", $$"""{"capture_id":"{{PayPalFixtures.CaptureId}}","amount":10,"reason":"Goodwill"}"""))
             .ThenText("Proposed a USD 10.00 refund for your approval.");
-        var http = _factory.CreateClient();
+        var http = await SellerClientAsync();
 
         using var chat = JsonDocument.Parse(await (await http.PostAsJsonAsync("/api/chat", new { message = "Refund USD 10 as goodwill" })).Content.ReadAsStringAsync());
         var actionId = chat.RootElement.GetProperty("proposedActions")[0].GetProperty("id").GetGuid();
@@ -112,7 +124,7 @@ public sealed class DemoStoryTests : IDisposable
     [Fact]
     public async Task Invalid_requests_return_problem_details()
     {
-        var http = _factory.CreateClient();
+        var http = await SellerClientAsync();
 
         var empty = await http.PostAsJsonAsync("/api/chat", new { message = "" });
         var unknown = await http.PostAsync($"/api/actions/{Guid.NewGuid()}/approve", null);
@@ -120,5 +132,27 @@ public sealed class DemoStoryTests : IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, empty.StatusCode);
         Assert.Equal("application/problem+json", empty.Content.Headers.ContentType?.MediaType);
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_back_office_needs_the_seller_to_sign_in()
+    {
+        var anonymous = _factory.CreateClient();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsJsonAsync("/api/chat", new { message = "hi" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.PostAsync($"/api/actions/{Guid.NewGuid()}/approve", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/audit")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/orders")).StatusCode);
+
+        var wrong = await anonymous.PostAsJsonAsync("/api/auth/login", new { email = "emma@sellerpilot.test", password = "guess" });
+        Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
+
+        var seller = await SellerClientAsync();
+        var me = await seller.GetFromJsonAsync<JsonElement>("/api/auth/me");
+        Assert.Equal("seller", me.GetProperty("role").GetString());
+        Assert.Equal(HttpStatusCode.OK, (await seller.GetAsync("/api/audit")).StatusCode);
+
+        await seller.PostAsync("/api/auth/logout", null);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await seller.GetAsync("/api/audit")).StatusCode);
     }
 }

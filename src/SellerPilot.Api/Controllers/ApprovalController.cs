@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SellerPilot.Api.Approvals;
+using SellerPilot.Api.Auth;
 using SellerPilot.Api.Contracts;
 using SellerPilot.Api.Data;
 
@@ -8,6 +10,7 @@ namespace SellerPilot.Api.Controllers;
 
 /// <summary>Pending actions and the seller's decisions. Approve is the only endpoint that moves money.</summary>
 [ApiController]
+[Authorize(Policy = AuthPolicies.Seller)]
 [Route("api/actions")]
 public sealed class ApprovalController(AppDbContext db, IApprovalService approvals) : ControllerBase
 {
@@ -38,6 +41,11 @@ public sealed class ApprovalController(AppDbContext db, IApprovalService approva
     [HttpPost("{id:guid}/reject")]
     public async Task<ActionResult<PendingActionDto>> Reject(Guid id, CancellationToken ct) =>
         ToResponse(await approvals.RejectAsync(id, ct));
+
+    /// <summary>The customer's item arrived back; the refund can now be approved.</summary>
+    [HttpPost("{id:guid}/return-received")]
+    public async Task<ActionResult<PendingActionDto>> ReturnReceived(Guid id, CancellationToken ct) =>
+        ToResponse(await approvals.MarkReturnReceivedAsync(id, ct));
 
     private ActionResult<PendingActionDto> ToResponse(DecisionResult result) => result.Outcome switch
     {

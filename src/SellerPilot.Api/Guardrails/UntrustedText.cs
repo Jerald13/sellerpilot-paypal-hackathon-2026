@@ -55,7 +55,7 @@ public sealed class UntrustedTextSanitizer(IInjectionDetector detector) : IUntru
 
 public static class Pii
 {
-    /// <summary>"aisha.buyer@example.com" -> "ai***@example.com". The LLM never needs the full address.</summary>
+    /// <summary>"amy.buyer@example.com" -> "am***@example.com". The LLM never needs the full address.</summary>
     public static string? MaskEmail(string? email)
     {
         if (string.IsNullOrWhiteSpace(email))

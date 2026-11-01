@@ -171,7 +171,8 @@ public sealed class ClaudeLlmClient : ILlmClient
         var usage = new LlmUsage(
             response.Usage.InputTokens,
             response.Usage.OutputTokens,
-            response.Usage.CacheReadInputTokens ?? 0);
+            response.Usage.CacheReadInputTokens ?? 0,
+            response.Usage.CacheCreationInputTokens ?? 0);
 
         return new LlmResponse(message, stopReason, response.Model.Raw(), usage, refusalCategory);
     }

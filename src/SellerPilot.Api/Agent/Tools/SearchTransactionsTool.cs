@@ -22,7 +22,7 @@ public sealed class SearchTransactionsTool(IPayPalReadClient paypal, IUntrustedT
         {
           "type": "object",
           "properties": {
-            "customer": { "type": "string", "description": "Part of the customer's name or email, e.g. \"Aisha\". Optional." },
+            "customer": { "type": "string", "description": "Part of the customer's name or email, e.g. \"Amy\". Optional." },
             "reference": { "type": "string", "description": "The shop's own order/invoice reference, if the seller mentions one. Optional." },
             "transaction_id": { "type": "string", "description": "A PayPal transaction ID (same as a capture ID). Optional." },
             "days": { "type": "integer", "description": "How many days back to search, 1-31. Default 30." }

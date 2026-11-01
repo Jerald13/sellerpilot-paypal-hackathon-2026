@@ -41,7 +41,10 @@ public sealed record PendingActionDto(
     string? PayPalResultId,
     string? Error,
     DateTime CreatedAt,
-    DateTime? DecidedAt)
+    DateTime? DecidedAt,
+    string RequestedBy,
+    int? CustomerId,
+    int? ShopOrderId)
 {
     public static PendingActionDto From(PendingAction a) => new(
         a.Id,
@@ -56,7 +59,10 @@ public sealed record PendingActionDto(
         a.PayPalResultId,
         a.Error,
         a.CreatedAt,
-        a.DecidedAt);
+        a.DecidedAt,
+        a.RequestedBy,
+        a.CustomerId,
+        a.ShopOrderId);
 
     internal static JsonElement? ParseJson(string? json)
     {

@@ -1,11 +1,14 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SellerPilot.Api.Auth;
 using SellerPilot.Api.Contracts;
 using SellerPilot.Api.Data;
 
 namespace SellerPilot.Api.Controllers;
 
 [ApiController]
+[Authorize(Policy = AuthPolicies.Seller)]
 [Route("api/audit")]
 public sealed class AuditController(AppDbContext db) : ControllerBase
 {
