@@ -1,0 +1,30 @@
+# Design decisions
+
+One line per decision: what and why. Newest at the bottom.
+
+- **2026-10-31 · .NET 10 (LTS).** The spec allows .NET 8+; .NET 10 is the current LTS and the installed SDK, and .NET 8 support ends Nov 2026.
+- **2026-10-31 · PayPal client split into `IPayPalReadClient` / `IPayPalWriteClient`.** Agent tools only receive the read interface, so "the AI never moves money" is enforced by the compiler, plus a reflection test (`ArchitectureTests`).
+- **2026-10-31 · Sandbox host allow-list in options validation.** `PayPal:BaseUrl` must be `https://api-m.sandbox.paypal.com` or the app refuses to start; a config mistake can't reach live PayPal.
+- **2026-10-31 · Own retry loop instead of a resilience library.** Explicit and unit-testable; retries GETs and only POSTs that carry a `PayPal-Request-Id`, reusing the same key on every attempt; refreshes the OAuth token once on 401.
+- **2026-10-31 · `PayPal-Request-Id` = `PendingAction.Id`, plus `custom_id` = action ID on refunds.** Retries are idempotent at PayPal, and each refund can be traced back to the approval that caused it.
+- **2026-10-31 · Atomic claim on approval (`UPDATE … WHERE Status = 'Pending'`).** Double clicks and concurrent requests can't execute an action twice; the loser gets HTTP 409 (tested with 5 parallel approvals).
+- **2026-10-31 · Re-validate against live PayPal state at approval time.** The capture may have been refunded (or the invoice paid) since the proposal; the same `RefundPolicy` runs at proposal and at approval.
+- **2026-10-31 · Refund limits per currency (`Guardrails:MaxRefundAmount`).** A single USD 500 cap doesn't fit SGD/MYR; a currency with no configured limit can't be refunded at all (fail closed).
+- **2026-10-31 · Refund history unknown ⇒ block.** If a capture is `PARTIALLY_REFUNDED` but its order can't be loaded, the remaining amount is unknown, so the refund is refused rather than guessed.
+- **2026-10-31 · Pending proposals count against the refundable amount.** Stops "three USD 45 proposals on a USD 45 capture"; PayPal state is still the only truth at approval time.
+- **2026-10-31 · Added `Summary` and `Payload` to `PendingAction` (beyond the spec model).** The card headline is built by code from verified PayPal data, not by the AI; `Payload` holds the exact reminder text the seller approves.
+- **2026-10-31 · Prompt-injection text is withheld, not just flagged.** Customer-written fields that match injection patterns are replaced with a placeholder before the LLM sees them; the seller still sees the excerpt in the UI. Trade-off: some false positives hide harmless notes from the AI.
+- **2026-10-31 · PII minimisation in tool results.** Emails are masked (`ai***@example.com`), addresses and payer IDs are dropped; the LLM never needs them for these tasks.
+- **2026-10-31 · Strict validation of every LLM argument.** IDs must be plain letters/digits (blocks path tricks like `../oauth2/token`), amounts are parsed as `decimal`, strings are length-capped; invalid calls go back to the model as errors.
+- **2026-10-31 · Official Anthropic C# SDK, beta endpoint.** Needed for server-side refusal fallbacks (`fallbacks: "default"`); no `temperature` (current Claude models reject sampling parameters), effort set explicitly (`medium`).
+- **2026-10-31 · Default model `claude-opus-5-5`; Gemini via REST as the alternative.** One config switch (`Llm:Provider`); both sit behind `ILlmClient`, so the eval can compare providers.
+- **2026-10-31 · Append-only conversation history; assistant turns replayed verbatim.** Claude thinking signatures and Gemini thought signatures must come back unchanged; a turn is committed only when it completes (refusals and truncated replies are dropped).
+- **2026-10-31 · "Simple compaction" for long chats.** Past `Agent:MaxHistoryMessages`, history is replaced by a short text recap; trimming old turns would invalidate Claude's thinking blocks.
+- **2026-10-31 · Static system prompt (no date or per-request values).** Keeps the prompt prefix byte-identical for prompt caching and thinking-block checks; tools return `as_of` dates instead.
+- **2026-10-31 · Max 6 tool rounds and max 10 calls per round.** If the model still wants tools, the pending calls get "not run" results and the turn closes with a fixed message, so history stays valid.
+- **2026-10-31 · In-memory conversations, SQLite for actions and audit.** Single demo seller; losing chat context on restart is acceptable, losing the audit trail is not.
+- **2026-10-31 · Audit writes after a PayPal call ignore request cancellation.** If the client disconnects after a refund executed, the record must still be saved.
+- **2026-10-31 · Shared `UserSecretsId` (`sellerpilot-dev`) plus optional `.env` loader.** One `dotnet user-secrets set` serves the API, the seed tool and the eval runner.
+- **2026-10-31 · Seed tool tries card payments first, then buyer-approval links.** Card orders are fully scripted but need card processing in the sandbox app; the fallback needs one manual click per order and a `capture` step.
+- **2026-10-31 · Eval runs in-process against the real LLM and sandbox, with a write client that refuses every call.** Deterministic checks (tools, proposals, amounts, reply text, flags), no LLM judge, so scores are reproducible and explainable.
+- **2026-10-31 · Days overdue computed on the UTC date.** Can be off by one around midnight in Malaysia (UTC+8); good enough for the demo.
