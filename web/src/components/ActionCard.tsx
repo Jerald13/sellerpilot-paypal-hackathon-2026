@@ -5,26 +5,49 @@ interface Props {
   busy: boolean
   onApprove: (id: string) => void
   onReject: (id: string) => void
+  onReturnReceived: (id: string) => void
 }
 
 const statusLabel: Record<PendingAction['status'], string> = {
   Pending: 'Waiting for your approval',
+  AwaitingReturn: 'Waiting for the customer to send the item back',
   Approved: 'Approved, executing…',
   Rejected: 'Rejected',
   Executed: 'Done',
   Failed: 'Failed',
 }
 
-export function ActionCard({ action, busy, onApprove, onReject }: Props) {
-  const isRefund = action.type === 'Refund'
+const typeLabel: Record<PendingAction['type'], string> = {
+  Refund: 'Refund',
+  InvoiceReminder: 'Invoice reminder',
+  BooksCorrection: 'Books correction',
+}
+
+const badgeClass: Record<PendingAction['type'], string> = {
+  Refund: 'badge-refund',
+  InvoiceReminder: 'badge-reminder',
+  BooksCorrection: 'badge-books',
+}
+
+const approveLabel: Record<PendingAction['type'], string> = {
+  Refund: 'Approve refund',
+  InvoiceReminder: 'Approve & send',
+  BooksCorrection: 'Approve correction',
+}
+
+export function ActionCard({ action, busy, onApprove, onReject, onReturnReceived }: Props) {
   const details = action.details ?? {}
   const flags = details.securityFlags ?? []
-  const pending = action.status === 'Pending'
+  const fromCustomer = action.requestedBy === 'customer'
+  const open = action.status === 'Pending' || action.status === 'AwaitingReturn'
 
   return (
     <article className={`card card-${action.status.toLowerCase()}`}>
       <header className="card-header">
-        <span className={`badge ${isRefund ? 'badge-refund' : 'badge-reminder'}`}>{isRefund ? 'Refund' : 'Invoice reminder'}</span>
+        <span className="row">
+          <span className={`badge ${badgeClass[action.type]}`}>{typeLabel[action.type]}</span>
+          {fromCustomer && <span className="badge badge-customer">Requested by customer</span>}
+        </span>
         <span className="card-amount">{formatMoney(action.amount, action.currency)}</span>
       </header>
 
@@ -32,7 +55,7 @@ export function ActionCard({ action, busy, onApprove, onReject }: Props) {
 
       {flags.length > 0 && (
         <div className="warning" role="alert">
-          <strong>Suspicious text in this order.</strong> SellerPilot withheld it from the AI:
+          <strong>Suspicious text {fromCustomer ? 'in this request' : 'in this order'}.</strong> SellerPilot withheld it from the AI:
           {flags.map((flag, i) => (
             <blockquote key={i}>
               “{flag.excerpt}” <span className="muted">({flag.rules.join(', ')})</span>
@@ -41,7 +64,14 @@ export function ActionCard({ action, busy, onApprove, onReject }: Props) {
         </div>
       )}
 
-      {!isRefund && details.note && (
+      {action.status === 'AwaitingReturn' && (
+        <div className="notice">
+          The order total is above the return-first limit, so the customer must send the item back. Click <strong>Return received</strong> when it arrives;
+          only then can the refund be approved.
+        </div>
+      )}
+
+      {action.type === 'InvoiceReminder' && details.note && (
         <div className="message-preview">
           <div className="muted">Message that will be sent to the customer:</div>
           {details.subject && <div className="preview-subject">{details.subject}</div>}
@@ -49,15 +79,25 @@ export function ActionCard({ action, busy, onApprove, onReject }: Props) {
         </div>
       )}
 
+      {action.type === 'BooksCorrection' && (
+        <p className="muted small">Only the shop's books change. No money moves and nobody is contacted.</p>
+      )}
+
       <p className="card-reason">
-        <span className="muted">AI's reason:</span> {action.reason}
+        <span className="muted">{fromCustomer ? "Customer's request:" : "AI's reason:"}</span> {action.reason}
       </p>
 
-      {pending ? (
+      {open ? (
         <div className="card-actions">
-          <button className="button primary" disabled={busy} onClick={() => onApprove(action.id)}>
-            {busy ? 'Working…' : isRefund ? `Approve refund` : 'Approve & send'}
-          </button>
+          {action.status === 'AwaitingReturn' ? (
+            <button className="button primary" disabled={busy} onClick={() => onReturnReceived(action.id)}>
+              {busy ? 'Working…' : 'Return received'}
+            </button>
+          ) : (
+            <button className="button primary" disabled={busy} onClick={() => onApprove(action.id)}>
+              {busy ? 'Working…' : approveLabel[action.type]}
+            </button>
+          )}
           <button className="button" disabled={busy} onClick={() => onReject(action.id)}>
             Reject
           </button>
@@ -65,8 +105,11 @@ export function ActionCard({ action, busy, onApprove, onReject }: Props) {
       ) : (
         <div className={`card-result result-${action.status.toLowerCase()}`}>
           <strong>{statusLabel[action.status]}</strong>
-          {action.status === 'Executed' && isRefund && action.payPalResultId && <> · PayPal refund ID <code>{action.payPalResultId}</code></>}
-          {action.status === 'Executed' && !isRefund && <> · reminder sent through PayPal</>}
+          {action.status === 'Executed' && action.type === 'Refund' && action.payPalResultId && (
+            <> · PayPal refund ID <code>{action.payPalResultId}</code> · posted to the books</>
+          )}
+          {action.status === 'Executed' && action.type === 'InvoiceReminder' && <> · reminder sent through PayPal</>}
+          {action.status === 'Executed' && action.type === 'BooksCorrection' && <> · recorded in the books</>}
           {action.error && <div className="error-text">{action.error}</div>}
           {action.decidedAt && <div className="muted small">{formatTime(action.decidedAt)}</div>}
         </div>

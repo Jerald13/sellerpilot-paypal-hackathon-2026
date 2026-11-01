@@ -19,9 +19,10 @@ interface Props {
 }
 
 const suggestions = [
+  'Do my books match PayPal?',
+  'John Doe says his wall hanging arrived damaged. Can you sort out a refund?',
   'Which invoices are still unpaid?',
   'Send a polite reminder to all of them.',
-  "Show me Test Buyer Aisha's payments from the last 30 days.",
 ]
 
 export function ChatPanel({ messages, busy, onSend, onNewChat }: Props) {

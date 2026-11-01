@@ -1,38 +1,124 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, type Health, type PendingAction } from './api'
+import { api, ApiError, type CurrentUser, type Health, type PendingAction } from './api'
 import { ApprovalsPanel } from './components/ApprovalsPanel'
 import { AuditLog } from './components/AuditLog'
 import { ChatPanel, type ChatMessage } from './components/ChatPanel'
+import { EvalView } from './components/EvalView'
+import { LoginForm } from './components/LoginForm'
+import { OrdersView } from './components/OrdersView'
+import { ReconciliationView } from './components/ReconciliationView'
 
-type Tab = 'assistant' | 'audit'
+type Tab = 'assistant' | 'orders' | 'reconciliation' | 'eval' | 'audit'
 
 const conversationKey = 'sellerpilot.conversationId'
 
+/** The seller's back office. Everything here needs the seller to be signed in. */
 export default function App() {
+  const [user, setUser] = useState<CurrentUser | null | undefined>(undefined)
+  const [health, setHealth] = useState<Health | null>(null)
+
+  useEffect(() => {
+    api.me().then(setUser).catch(() => setUser(null))
+    api.health().then(setHealth).catch(() => setHealth(null))
+  }, [])
+
+  const signOut = async () => {
+    await api.logout().catch(() => undefined)
+    sessionStorage.removeItem(conversationKey)
+    setUser(null)
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <span className="logo" aria-hidden>
+            ✈
+          </span>
+          <div>
+            <h1>SellerPilot</h1>
+            <div className="muted small">AI payment ops for small sellers · PayPal sandbox</div>
+          </div>
+        </div>
+        <div className="topbar-right">
+          <HealthBadges health={health} />
+          <a className="button ghost" href="/shop" title="The customer-facing shop">
+            Storefront ↗
+          </a>
+          {user && (
+            <span className="user">
+              {user.name}
+              <button className="button ghost" onClick={() => void signOut()}>
+                Sign out
+              </button>
+            </span>
+          )}
+          <ThemeToggle />
+        </div>
+      </header>
+
+      {user === undefined && <main className="layout single"><div className="muted">Loading…</div></main>}
+      {user === null && (
+        <main className="layout single centered">
+          {health?.auth?.configured === false && (
+            <div className="warning">Sign-in is not configured: set <code>Shop__DemoPassword</code> in <code>.env</code> and restart the API.</div>
+          )}
+          <LoginForm
+            title="Seller sign-in"
+            subtitle="The back office: assistant, approvals, orders, reconciliation and audit log."
+            demoEmails={['emma@sellerpilot.test']}
+            onSignedIn={setUser}
+          />
+        </main>
+      )}
+      {user && user.role !== 'seller' && (
+        <main className="layout single centered">
+          <div className="panel">
+            <p>
+              You're signed in as a customer ({user.name}). The back office is for the seller. <a href="/shop">Go to the storefront</a> or{' '}
+              <button className="button ghost" onClick={() => void signOut()}>
+                sign out
+              </button>
+              .
+            </p>
+          </div>
+        </main>
+      )}
+      {user && user.role === 'seller' && <BackOffice onSignedOut={() => setUser(null)} />}
+    </div>
+  )
+}
+
+function BackOffice({ onSignedOut }: { onSignedOut: () => void }) {
   const [tab, setTab] = useState<Tab>('assistant')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [conversationId, setConversationId] = useState<string | null>(() => sessionStorage.getItem(conversationKey))
   const [chatBusy, setChatBusy] = useState(false)
   const [actions, setActions] = useState<PendingAction[]>([])
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set())
-  const [health, setHealth] = useState<Health | null>(null)
   const nextId = useRef(1)
 
   const addMessage = (message: Omit<ChatMessage, 'id'>) =>
     setMessages((current) => [...current, { ...message, id: nextId.current++ }])
 
+  const handleError = useCallback(
+    (e: unknown) => {
+      if (e instanceof ApiError && e.status === 401) onSignedOut()
+    },
+    [onSignedOut],
+  )
+
   const refreshActions = useCallback(async () => {
     try {
       setActions(await api.actions())
-    } catch {
-      // The API may still be starting; the next refresh will catch up.
+    } catch (e) {
+      handleError(e)
     }
-  }, [])
+  }, [handleError])
 
   useEffect(() => {
-    api.actions().then(setActions).catch(() => setActions([]))
-    api.health().then(setHealth).catch(() => setHealth(null))
-  }, [])
+    api.actions().then(setActions).catch(handleError)
+  }, [handleError])
 
   const send = async (text: string) => {
     addMessage({ role: 'user', text })
@@ -50,6 +136,7 @@ export default function App() {
       })
       if (response.proposedActions.length > 0) await refreshActions()
     } catch (e) {
+      handleError(e)
       addMessage({ role: 'error', text: `Something went wrong: ${(e as Error).message}` })
     } finally {
       setChatBusy(false)
@@ -70,13 +157,15 @@ export default function App() {
       return next
     })
 
-  const decide = async (id: string, decision: 'approve' | 'reject') => {
+  const decide = async (id: string, decision: 'approve' | 'reject' | 'return-received') => {
     setBusy(id, true)
     try {
-      const updated = decision === 'approve' ? await api.approve(id) : await api.reject(id)
+      const updated =
+        decision === 'approve' ? await api.approve(id) : decision === 'reject' ? await api.reject(id) : await api.returnReceived(id)
       setActions((current) => current.map((a) => (a.id === id ? updated : a)))
     } catch (e) {
-      addMessage({ role: 'error', text: `Could not ${decision} the action: ${(e as Error).message}` })
+      handleError(e)
+      addMessage({ role: 'error', text: `Could not ${decision.replace('-', ' ')} the action: ${(e as Error).message}` })
       await refreshActions()
     } finally {
       setBusy(id, false)
@@ -90,31 +179,37 @@ export default function App() {
     }
   }
 
-  return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="logo" aria-hidden>
-            ✈
-          </span>
-          <div>
-            <h1>SellerPilot</h1>
-            <div className="muted small">AI payment ops for small sellers · PayPal sandbox</div>
-          </div>
-        </div>
-        <nav className="tabs">
-          <button className={tab === 'assistant' ? 'active' : ''} onClick={() => setTab('assistant')}>
-            Assistant
-          </button>
-          <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>
-            Audit log
-          </button>
-        </nav>
-        <HealthBadges health={health} />
-        <ThemeToggle />
-      </header>
+  const askAssistant = (text: string) => {
+    setTab('assistant')
+    void send(text)
+  }
 
-      {tab === 'assistant' ? (
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'assistant', label: 'Assistant' },
+    { id: 'orders', label: 'Orders' },
+    { id: 'reconciliation', label: 'Reconciliation' },
+    { id: 'eval', label: 'Eval' },
+    { id: 'audit', label: 'Audit log' },
+  ]
+
+  return (
+    <>
+      <nav className="tabs subnav">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            className={tab === t.id ? 'active' : ''}
+            onClick={() => {
+              setTab(t.id)
+              if (t.id === 'assistant') void refreshActions()
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'assistant' && (
         <main className="layout">
           <ChatPanel messages={messages} busy={chatBusy} onSend={(t) => void send(t)} onNewChat={newChat} />
           <ApprovalsPanel
@@ -122,21 +217,38 @@ export default function App() {
             busyIds={busyIds}
             onApprove={(id) => void decide(id, 'approve')}
             onReject={(id) => void decide(id, 'reject')}
+            onReturnReceived={(id) => void decide(id, 'return-received')}
             onApproveAll={(ids) => void approveAll(ids)}
           />
         </main>
-      ) : (
+      )}
+      {tab === 'orders' && (
+        <main className="layout single">
+          <OrdersView />
+        </main>
+      )}
+      {tab === 'reconciliation' && (
+        <main className="layout single">
+          <ReconciliationView onAskAssistant={askAssistant} />
+        </main>
+      )}
+      {tab === 'eval' && (
+        <main className="layout single">
+          <EvalView />
+        </main>
+      )}
+      {tab === 'audit' && (
         <main className="layout single">
           <AuditLog />
         </main>
       )}
-    </div>
+    </>
   )
 }
 
 const themeKey = 'sellerpilot.theme'
 
-function ThemeToggle() {
+export function ThemeToggle() {
   // index.html already applied the saved theme (dark by default) before React started.
   const [theme, setTheme] = useState(() => document.documentElement.dataset.theme ?? 'dark')
   const toggle = () => {

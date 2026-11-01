@@ -7,12 +7,14 @@ interface Props {
   busyIds: Set<string>
   onApprove: (id: string) => void
   onReject: (id: string) => void
+  onReturnReceived: (id: string) => void
   onApproveAll: (ids: string[]) => void
 }
 
-export function ApprovalsPanel({ actions, busyIds, onApprove, onReject, onApproveAll }: Props) {
+export function ApprovalsPanel({ actions, busyIds, onApprove, onReject, onReturnReceived, onApproveAll }: Props) {
   const pending = actions.filter((a) => a.status === 'Pending')
-  const decided = actions.filter((a) => a.status !== 'Pending').slice(0, 8)
+  const awaitingReturn = actions.filter((a) => a.status === 'AwaitingReturn')
+  const decided = actions.filter((a) => a.status !== 'Pending' && a.status !== 'AwaitingReturn').slice(0, 8)
   const [confirmAll, setConfirmAll] = useState(false)
 
   // The "approve all" confirmation expires so a stray second click later can't approve by accident.
@@ -21,6 +23,10 @@ export function ApprovalsPanel({ actions, busyIds, onApprove, onReject, onApprov
     const timer = setTimeout(() => setConfirmAll(false), 5000)
     return () => clearTimeout(timer)
   }, [confirmAll])
+
+  const card = (action: PendingAction, busy: boolean) => (
+    <ActionCard key={action.id} action={action} busy={busy} onApprove={onApprove} onReject={onReject} onReturnReceived={onReturnReceived} />
+  )
 
   return (
     <section className="panel approvals">
@@ -44,20 +50,25 @@ export function ApprovalsPanel({ actions, busyIds, onApprove, onReject, onApprov
         )}
       </div>
       <p className="muted small">
-        The AI can only propose. Nothing is refunded or sent until you approve it here.
+        The AI and your customers can only propose. Nothing is refunded, sent or booked until you approve it here.
       </p>
 
-      {pending.length === 0 && <div className="empty">No proposals waiting. Ask the assistant to refund an order or remind a customer.</div>}
-      {pending.map((action) => (
-        <ActionCard key={action.id} action={action} busy={busyIds.has(action.id)} onApprove={onApprove} onReject={onReject} />
-      ))}
+      {pending.length === 0 && awaitingReturn.length === 0 && (
+        <div className="empty">No proposals waiting. Ask the assistant to refund an order or remind a customer.</div>
+      )}
+      {pending.map((action) => card(action, busyIds.has(action.id)))}
+
+      {awaitingReturn.length > 0 && (
+        <>
+          <h3 className="subtle-heading">Waiting for a return</h3>
+          {awaitingReturn.map((action) => card(action, busyIds.has(action.id)))}
+        </>
+      )}
 
       {decided.length > 0 && (
         <>
           <h3 className="subtle-heading">Recently decided</h3>
-          {decided.map((action) => (
-            <ActionCard key={action.id} action={action} busy={false} onApprove={onApprove} onReject={onReject} />
-          ))}
+          {decided.map((action) => card(action, false))}
         </>
       )}
     </section>
