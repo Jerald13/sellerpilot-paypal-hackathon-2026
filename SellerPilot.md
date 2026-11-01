@@ -13,7 +13,7 @@ An AI assistant that lets small online sellers manage PayPal payment admin (tran
 
 ## 2. Problem
 
-Small Malaysian sellers who sell overseas (e.g. a batik shop selling to US and Singapore buyers) handle payment admin alone:
+Small Malaysian sellers who sell overseas (e.g. a handmade textile shop selling to US and Singapore buyers) handle payment admin alone:
 
 - "Did that customer pay yet?"
 - "Which invoices are still unpaid?"
@@ -251,7 +251,7 @@ Create in the PayPal sandbox:
 Notes:
 - Use the sandbox **business** account (seller) and **personal** account (buyer) from developer.paypal.com
 - Some order approval flows need the buyer to log in; test this on day one and pick a flow that can be scripted
-- Name customers with obvious fake names ("Test Buyer Aisha", "Test Buyer Tan")
+- Name customers with obvious fake names ("Test Buyer Amy", "Test Buyer Tom")
 
 ---
 
@@ -372,3 +372,12 @@ Record in 1080p with a clear voiceover (script it). Hide secrets and dev tools. 
 - Hackathon: https://paypalaihackathon.devpost.com/
 - PayPal Developer (sandbox accounts, apps, API docs): https://developer.paypal.com/
 - Check the hackathon **Resources** tab for PayPal starter kits, agent toolkits or MCP servers that could save integration time.
+
+## Scope extension (agreed 2026-11-01)
+
+Added on the developer's request, before the 8 Nov scope freeze:
+
+- **Shop books:** customers, products, orders and a payment ledger in SQLite, built on the sandbox orders; executed refunds are posted automatically.
+- **Reconciliation:** books vs PayPal with findings and suggested fixes; new seller tools `FindShopOrders`, `RunReconciliation`, `ProposeBooksCorrection` (approval-gated, no money moves).
+- **Storefront and accounts:** cookie sign-in for the seller and demo customers; a separate customer assistant (`ListMyOrders`, `CheckRefundOptions`) that offers policy-checked refunds; customer requests wait for the seller (return-first above a threshold).
+- **Eval tab:** run the eval from the back office with per-case cost; 14 harder cases (vague requests, multi-turn, reconciliation, storefront).

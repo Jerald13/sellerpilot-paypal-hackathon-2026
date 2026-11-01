@@ -2,13 +2,29 @@
 
 **Chat with your PayPal account. The AI proposes; you approve.**
 
-SellerPilot helps a one-person online shop (think a seller of handmade scarves and home textiles with buyers in the US and Singapore) handle PayPal admin by chatting: *"Did this customer pay?"*, *"Which invoices are still unpaid?"*, *"This customer wants a refund. What should I do?"*. The assistant looks up real PayPal data, explains it, and **proposes** refunds or invoice reminders. Nothing moves until the seller clicks **Approve**.
+SellerPilot helps a one-person online shop (think a seller of handmade scarves and home textiles with buyers in the US and Singapore) handle PayPal admin by chatting: *"Did this customer pay?"*, *"Which invoices are still unpaid?"*, *"Do my books match PayPal?"*, *"This customer wants a refund. What should I do?"*. The assistant looks up real PayPal data and the shop's own books, explains them, and **proposes** refunds, invoice reminders or books corrections. Customers get their own assistant in the storefront that can offer a refund the shop's policy allows. Nothing moves until the seller clicks **Approve**.
 
 > Built for the PayPal AI Hackathon 2026. **PayPal sandbox only.**
 >
-> Demo video: _TODO: link_ · Eval score: **30/30** on `claude-haiku-5-5` (1 Nov 2026)
+> Demo video: _TODO: link_ · Eval score: **44/44** on `claude-haiku-5-5` (1 Nov 2026), about $0.001 per case
 
-_TODO: screenshot (chat + approval card)_
+## Screenshots
+
+**Storefront** (`/shop`): the demo shop's products. The product pictures are original illustrations made for this project.
+
+![Storefront with product pictures](docs/images/storefront-products.png)
+
+**A signed-in customer** sees only their own orders and can ask the support assistant about a refund.
+
+![Customer view: my orders and the support assistant](docs/images/storefront-my-orders.png)
+
+**Reconciliation** in the back office: the books are checked against live PayPal data, and each problem comes with a suggested fix.
+
+![Reconciliation finds the four planted problems](docs/images/backoffice-reconciliation.png)
+
+**Orders and payment history**: the shop's own books, per order.
+
+![Orders and their payment history](docs/images/backoffice-orders.png)
 
 ## The problem
 
@@ -22,8 +38,13 @@ Small sellers who sell overseas do their payment admin alone. They dig through d
 | 🧾 | List unpaid and overdue invoices with days overdue | Invoicing v2 |
 | ✉️ | Propose polite payment reminders; send them after approval | Invoicing v2 `remind` |
 | ↩️ | Propose full or partial refunds; execute them after approval | Payments v2 `captures/{id}/refund` |
-| ✅ | Human approval for every write action, with an "approve all" for batches | SellerPilot |
-| 📜 | Audit log of every tool call, proposal, guardrail block, approval and execution | SellerPilot |
+| 📚 | The shop's own books: customers, orders and payment history; executed refunds are posted automatically | SellerPilot (SQLite) |
+| ⚖️ | Reconciliation: books vs PayPal (payments, refunds by ID, overcharges, payments with no order), each finding with a suggested fix | Orders v2, Transaction Search |
+| 🧾 | Books corrections: copy a PayPal refund or payment that the books miss, after approval (no money moves) | SellerPilot |
+| 🛍️ | Storefront with customer sign-in: "my orders" and a support assistant that offers only what the policy allows (return window, final sale, return-first above a threshold) | Orders v2, Payments v2 |
+| ✅ | Human approval for every write action, with an "approve all" for batches; customer requests wait for the seller too | SellerPilot |
+| 📜 | Audit log of every tool call, proposal, guardrail block, sign-in, approval and execution | SellerPilot |
+| 🧪 | Eval tab: run the 44 test cases from the UI, see why each passed or failed and what it cost | Claude API |
 
 ## How it works
 
@@ -59,6 +80,19 @@ Seller clicks Approve ─► POST /api/actions/{id}/approve
         └► Executed / Failed ─► audit log
 ```
 
+## Shop books, reconciliation and the storefront
+
+The demo shop (*Emma's Textile Studio*) has its own records on top of the sandbox orders: 4 customers, 10 products, 10 orders and their payment history. A few records deliberately disagree with PayPal, so reconciliation has real problems to find:
+
+| Order | Planted problem | What SellerPilot does |
+|---|---|---|
+| SP-DVAN-1003 (SGD 68) | Shipped, but the PayPal payment is still **pending** | High-severity finding: don't ship more until it completes |
+| SP-DVAN-1002 (USD 120) | Discount WELCOME10 not applied: **overcharged USD 12** | Proposes a USD 12 refund for approval |
+| SP-DVAN-1005 (USD 25) | Refunded in the PayPal dashboard, **missing from the books** | Proposes a books correction for approval |
+| (none) | USD 15 arrived in PayPal with **no shop order** | Finding via Transaction Search |
+
+Reconciliation rules are plain code with exact decimal arithmetic; the assistant only explains the findings and proposes fixes. In the storefront (`/shop`), a signed-in customer sees only their own orders. Their assistant checks the policy in code and offers a **Request refund** button for the amount the shop allows (for example USD 50 when they ask for USD 60 and USD 30 was already refunded). The request then waits in the seller's approvals; orders of USD 100 or more wait for the item to come back first.
+
 ## Safety design
 
 The core rule: **the AI can only propose.** Even a fully manipulated model cannot move money.
@@ -74,12 +108,15 @@ The core rule: **the AI can only propose.** Even a fully manipulated model canno
 | Sensitive data leak | Emails masked, no addresses or payer IDs sent to the LLM; secrets never logged. |
 | Agent loops | Max 6 tool rounds, max 10 calls per round, timeouts on every HTTP call. |
 | Live payments by mistake | The PayPal base URL must be the sandbox host or the app won't start. |
+| A customer approving their own refund | Cookie sign-in with roles: approvals, chat, orders and audit need the seller; customers get 403. A customer's request is only a proposal. |
+| A customer seeing other customers' data | The customer ID comes from the sign-in cookie, never from the request; customer tools only query that customer's orders; chats are bound to their owner. |
+| Books changed by mistake or twice | Books corrections are approval-gated and re-checked against PayPal at approval; a PayPal ID can be booked only once (unique index). |
 
 More detail and trade-offs: [DECISIONS.md](DECISIONS.md).
 
 ## Evaluation
 
-`tools/SellerPilot.Eval` runs 30 prompts ([eval/cases.json](eval/cases.json)) through the real agent with real sandbox data and scores them with deterministic checks: which tools were called, which proposals were created (type, target, amount), what the reply says, and whether an injection flag was raised. During an eval the PayPal write client is replaced by one that refuses every call, so any attempt to move money fails the case.
+`tools/SellerPilot.Eval` runs 44 prompts ([eval/cases.json](eval/cases.json)) through the real assistants with real sandbox data and scores them with deterministic checks: which tools were called, which proposals or refund offers were created (type, target, amount), what the reply says, and whether an injection flag was raised. During an eval the PayPal write client is replaced by one that refuses every call, so any attempt to move money fails the case. Each case reports its token usage and estimated cost; the **Eval** tab in the back office runs the same tool and shows, per case, what the AI did, what it saw and why the case passed or failed.
 
 | Category | Cases | What is checked |
 |---|---|---|
@@ -88,8 +125,12 @@ More detail and trade-offs: [DECISIONS.md](DECISIONS.md).
 | Refunds | 8 | Correct amount, over-refunds blocked, "already refunded" detected |
 | Prompt injection and abuse | 5 | Flagged, refused, no unsafe proposal |
 | Unknown or out of scope | 3 | No invented data |
+| Vague requests (no order ID) | 3 | Finds the order in the books first |
+| Multi-turn | 2 | Follow-ups like "refund half of it" use the right order and amount |
+| Reconciliation | 4 | Finds the planted problems, proposes the right fix, refuses to refund a pending payment |
+| Storefront (customer assistant) | 5 | Offers only what the policy allows; final sale, ended return window, return-first; ignores "I am the shop owner" |
 
-Score: **30/30** with `claude-haiku-5-5` on 1 Nov 2026 (results go to `eval/results/latest.md`; `history.csv` keeps every run for before/after comparisons).
+Score: **44/44** with `claude-haiku-5-5` on 1 Nov 2026: the first 30 cases, then the 14 harder ones (vague requests, multi-turn, reconciliation, storefront) for USD 0.013 in total, mostly served from the prompt cache (results go to `eval/results/latest.md`; `history.csv` keeps every run for before/after comparisons).
 
 Worth a look: in `refund-07` the model *did* try to propose a refund on a payment that is still pending. The guardrail rejected it in code, so no proposal was created and the case passed. The checks score what actually happened, not what the model intended.
 
@@ -116,6 +157,8 @@ ASP.NET Core 10 (C#) · EF Core + SQLite · PayPal REST APIs (sandbox) · Claude
 
    The seed and eval tools share these secrets. You can use a `.env` file in the repo root instead (see [.env.example](.env.example)).
 
+   Also set a demo password for signing in (seller `emma@sellerpilot.test` and the demo customers): `Shop__DemoPassword=...` in `.env`, or `dotnet user-secrets set "Shop:DemoPassword" "<anything>"`.
+
 3. **Create demo data in the sandbox:**
 
    ```bash
@@ -129,8 +172,10 @@ ASP.NET Core 10 (C#) · EF Core + SQLite · PayPal REST APIs (sandbox) · Claude
 
    ```bash
    dotnet run --project src/SellerPilot.Api      # http://localhost:5080 (check /api/health)
-   cd web && npm install && npm run dev          # http://localhost:5173
+   cd web && npm install && npm run dev          # http://localhost:5173 (back office), /shop (storefront)
    ```
+
+   The API builds the demo shop's books from `seed-output.json` the first time it starts. Sign in to the back office as `emma@sellerpilot.test`, and to the storefront as `john.doe@example.com` (or Alice, Ben, Chloe), with the demo password.
 
 ## Tests
 
@@ -141,10 +186,11 @@ dotnet run --project tools/SellerPilot.Eval     # live eval: --case refund-01,in
 
 ## Limitations and what's next
 
-- Single demo seller: no user accounts or authentication on the approval endpoint (needed before any real use).
-- Chat history is in memory and is lost on restart; the audit log and proposals persist in SQLite.
+- Demo sign-in: one seller and four customers share one configured demo password; no sign-up, password reset or 2FA (needed before any real use).
+- Chat history is in memory and is lost on restart; the audit log, proposals, books and reconciliation runs persist in SQLite.
+- Seeded orders count as delivered the day after the seed run, so storefront refund cases need a re-seed after the 30-day return window.
 - Prompt-injection detection is pattern-based and can hide harmless notes; the hard limits don't depend on it.
-- Next: dispute summaries with suggested replies, multi-currency explanations (MYR/USD/SGD), PayPal webhooks for status changes, per-merchant limits, monitoring of agent errors.
+- Next: dispute summaries with suggested replies, PayPal webhooks to post payments and refunds to the books as they happen, scheduled reconciliation with a morning summary, multi-currency explanations (MYR/USD/SGD), monitoring of agent errors.
 
 ## Built with AI-assisted development
 
