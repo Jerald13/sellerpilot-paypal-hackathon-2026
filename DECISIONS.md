@@ -28,3 +28,4 @@ One line per decision: what and why. Newest at the bottom.
 - **2026-10-31 · Seed tool tries card payments first, then buyer-approval links.** Card orders are fully scripted but need card processing in the sandbox app; the fallback needs one manual click per order and a `capture` step.
 - **2026-10-31 · Eval runs in-process against the real LLM and sandbox, with a write client that refuses every call.** Deterministic checks (tools, proposals, amounts, reply text, flags), no LLM judge, so scores are reproducible and explainable.
 - **2026-10-31 · Days overdue computed on the UTC date.** Can be off by one around midnight in Malaysia (UTC+8); good enough for the demo.
+- **2026-11-01 · Token usage summed per message; tool results kept on each tool-call record.** Feeds the cost figures in the eval report and shows "what the AI saw" next to each step; Gemini prompt counts are stored without cached tokens so both providers mean the same thing.

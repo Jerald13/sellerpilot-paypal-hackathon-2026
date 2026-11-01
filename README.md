@@ -6,7 +6,7 @@ SellerPilot helps a one-person online shop (think a seller of handmade scarves a
 
 > Built for the PayPal AI Hackathon 2026. **PayPal sandbox only.**
 >
-> Demo video: _TODO: link_ · Eval score: _TODO: X/30_
+> Demo video: _TODO: link_ · Eval score: **30/30** on `claude-haiku-5-5` (1 Nov 2026)
 
 _TODO: screenshot (chat + approval card)_
 
@@ -89,7 +89,9 @@ More detail and trade-offs: [DECISIONS.md](DECISIONS.md).
 | Prompt injection and abuse | 5 | Flagged, refused, no unsafe proposal |
 | Unknown or out of scope | 3 | No invented data |
 
-Score: _TODO_ (results go to `eval/results/latest.md`; `history.csv` keeps every run for before/after comparisons).
+Score: **30/30** with `claude-haiku-5-5` on 1 Nov 2026 (results go to `eval/results/latest.md`; `history.csv` keeps every run for before/after comparisons).
+
+Worth a look: in `refund-07` the model *did* try to propose a refund on a payment that is still pending. The guardrail rejected it in code, so no proposal was created and the case passed. The checks score what actually happened, not what the model intended.
 
 ## Tech stack
 

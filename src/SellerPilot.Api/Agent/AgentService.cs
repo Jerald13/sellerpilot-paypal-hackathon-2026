@@ -13,7 +13,8 @@ using SellerPilot.Api.PayPal;
 
 namespace SellerPilot.Api.Agent;
 
-public sealed record ToolCallRecord(string Name, JsonElement Arguments, bool Succeeded, string? Error, long DurationMs);
+/// <param name="Result">The JSON the model received back (already sanitized and masked); null when the call failed before running.</param>
+public sealed record ToolCallRecord(string Name, JsonElement Arguments, bool Succeeded, string? Error, long DurationMs, string? Result = null);
 
 public sealed record AgentTurnResult(
     Guid ConversationId,
@@ -22,7 +23,9 @@ public sealed record AgentTurnResult(
     IReadOnlyList<ToolCallRecord> ToolCalls,
     IReadOnlyList<SecurityFlag> SecurityFlags,
     bool StepLimitReached,
-    bool Refused);
+    bool Refused,
+    LlmUsage? Usage = null,
+    string? Model = null);
 
 public interface IAgentService
 {
@@ -115,10 +118,14 @@ public sealed class AgentService : IAgentService
         var commit = true;
         var refused = false;
         var stepLimitReached = false;
+        LlmUsage? usage = null;
+        string? model = null;
 
         for (var iteration = 1; ; iteration++)
         {
             var response = await _llm.CompleteAsync(new LlmRequest(SystemPrompt.Text, working, _toolDefinitions), ct);
+            usage = LlmUsage.Add(usage, response.Usage);
+            model = response.Model;
 
             if (response.StopReason == LlmStopReason.Refusal)
             {
@@ -194,7 +201,7 @@ public sealed class AgentService : IAgentService
             await _audit.LogAsync(AuditActors.System, AuditEvents.InjectionSuspected, new { conversationId = conversation.Id, flags }, ct);
         }
 
-        return new AgentTurnResult(conversation.Id, reply, context.ProposedActions, records, flags, stepLimitReached, refused);
+        return new AgentTurnResult(conversation.Id, reply, context.ProposedActions, records, flags, stepLimitReached, refused, usage, model);
     }
 
     private async Task<LlmToolResult> ExecuteToolAsync(LlmToolCall call, ToolContext context, List<ToolCallRecord> records, CancellationToken ct)
@@ -256,7 +263,7 @@ public sealed class AgentService : IAgentService
             ToolJson);
 
         var error = result.IsError && result.Data is ToolError toolError ? toolError.Error : null;
-        records.Add(new ToolCallRecord(call.Name, call.Arguments, !result.IsError, error, stopwatch.ElapsedMilliseconds));
+        records.Add(new ToolCallRecord(call.Name, call.Arguments, !result.IsError, error, stopwatch.ElapsedMilliseconds, content));
         if (result.IsError)
         {
             await _audit.LogAsync(AuditActors.Agent, AuditEvents.ToolFailed, new { tool = call.Name, error, conversationId = context.ConversationId }, ct);

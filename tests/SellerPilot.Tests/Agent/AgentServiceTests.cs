@@ -60,6 +60,28 @@ public class AgentServiceTests
     }
 
     [Fact]
+    public async Task Token_usage_is_summed_over_all_model_calls_and_tool_results_are_recorded()
+    {
+        _llm.Then(_ => _llm.ToolResponse(("LookupThing", """{"id":"A"}""")) with { Usage = new LlmUsage(1000, 50, 200) })
+            .Then(_ => ScriptedLlmClient.TextResponse("Done.") with { Usage = new LlmUsage(1500, 80, 300) });
+
+        var turn = await CreateAgent().HandleMessageAsync(null, "look up A", CancellationToken.None);
+
+        Assert.Equal(new LlmUsage(2500, 130, 500), turn.Usage);
+        Assert.Equal("scripted-model", turn.Model);
+        var call = Assert.Single(turn.ToolCalls);
+        Assert.Contains("\"echo\":\"A\"", call.Result);
+    }
+
+    [Fact]
+    public void Adding_usage_treats_missing_counts_as_nothing()
+    {
+        Assert.Null(LlmUsage.Add(null, null));
+        Assert.Equal(new LlmUsage(1, 2, 3), LlmUsage.Add(null, new LlmUsage(1, 2, 3)));
+        Assert.Equal(new LlmUsage(1, 2, 3), LlmUsage.Add(new LlmUsage(1, 2, 3), null));
+    }
+
+    [Fact]
     public async Task Stops_after_the_maximum_number_of_tool_rounds()
     {
         _llm.Default = _ => _llm.ToolResponse(("LookupThing", """{"id":"again"}"""));

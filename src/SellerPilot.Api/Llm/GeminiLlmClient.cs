@@ -207,10 +207,13 @@ public sealed class GeminiLlmClient(HttpClient http, GeminiOptions options, ILog
         LlmUsage? usage = null;
         if (root.TryGetProperty("usageMetadata", out var meta))
         {
+            // Gemini's prompt count includes cached tokens; LlmUsage keeps them separate (as Claude reports them).
+            var prompt = meta.TryGetProperty("promptTokenCount", out var p) ? p.GetInt64() : 0;
+            var cachedTokens = meta.TryGetProperty("cachedContentTokenCount", out var cached) ? cached.GetInt64() : 0;
             usage = new LlmUsage(
-                meta.TryGetProperty("promptTokenCount", out var p) ? p.GetInt64() : 0,
+                prompt - cachedTokens,
                 meta.TryGetProperty("candidatesTokenCount", out var c) ? c.GetInt64() : 0,
-                meta.TryGetProperty("cachedContentTokenCount", out var cached) ? cached.GetInt64() : 0);
+                cachedTokens);
         }
 
         var message = new LlmMessage(LlmRole.Assistant, text.Length > 0 ? text.ToString() : null, calls.Count > 0 ? calls : null)

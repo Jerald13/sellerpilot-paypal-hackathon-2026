@@ -55,7 +55,12 @@ public sealed record LlmMessage(
 
 public sealed record LlmRequest(string SystemPrompt, IReadOnlyList<LlmMessage> Messages, IReadOnlyList<LlmToolDefinition> Tools);
 
-public sealed record LlmUsage(long InputTokens, long OutputTokens, long CacheReadInputTokens);
+/// <summary>Token counts for one or more model calls. <see cref="InputTokens"/> excludes cache reads.</summary>
+public sealed record LlmUsage(long InputTokens, long OutputTokens, long CacheReadInputTokens)
+{
+    public static LlmUsage? Add(LlmUsage? a, LlmUsage? b) =>
+        a is null ? b : b is null ? a : new(a.InputTokens + b.InputTokens, a.OutputTokens + b.OutputTokens, a.CacheReadInputTokens + b.CacheReadInputTokens);
+}
 
 public sealed record LlmResponse(
     LlmMessage Message,
