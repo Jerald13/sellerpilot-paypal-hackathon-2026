@@ -63,7 +63,7 @@ public sealed partial class EvalController(EvalProcessRunner runner, ILlmClient 
     {
         if (!environment.IsDevelopment())
         {
-            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "The eval runner is only available in Development.");
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Running the eval is turned off on this server to protect the API credits (each run calls the real LLM). The latest results are shown here; to run it yourself, start the API locally in Development.");
         }
 
         var category = string.IsNullOrWhiteSpace(request?.Category) ? null : request.Category.Trim().ToLowerInvariant();

@@ -26,5 +26,14 @@ public sealed class ShopOptions
     /// </summary>
     public Dictionary<string, decimal> ReturnRequiredFrom { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Hosted public demo: the sign-in page offers one-click sign-in as the demo accounts (no password), and chat is
+    /// rate limited per client address. Sandbox money only. Off by default; never enable it on a shop with real customers.
+    /// </summary>
+    public bool PublicDemo { get; set; }
+
+    /// <summary>Public demo only: chat messages allowed per client address per minute (both assistants together).</summary>
+    public int PublicDemoChatPerMinute { get; set; } = 10;
+
     public bool HasDemoPassword => !string.IsNullOrWhiteSpace(DemoPassword);
 }

@@ -3,6 +3,8 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using SellerPilot.Api.Configuration;
 
 namespace SellerPilot.Api.Auth;
 
@@ -21,6 +23,9 @@ public static class AuthPolicies
     public const string Customer = "Customer";
 
     public const string LoginRateLimit = "login";
+
+    /// <summary>Limits LLM spend on the hosted public demo; no limit otherwise.</summary>
+    public const string ChatRateLimit = "chat";
 }
 
 public static class AuthClaims
@@ -73,6 +78,15 @@ public static class AuthSetup
             o.AddPolicy(AuthPolicies.LoginRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
                 ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
+            o.AddPolicy(AuthPolicies.ChatRateLimit, ctx =>
+            {
+                var shop = ctx.RequestServices.GetRequiredService<IOptions<ShopOptions>>().Value;
+                return shop.PublicDemo
+                    ? RateLimitPartition.GetFixedWindowLimiter(
+                        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                        _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, shop.PublicDemoChatPerMinute), Window = TimeSpan.FromMinutes(1) })
+                    : RateLimitPartition.GetNoLimiter("local");
+            });
         });
         return services;
     }

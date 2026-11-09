@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SellerPilot.Api.Agent;
 using SellerPilot.Api.Auth;
 using SellerPilot.Api.Contracts;
@@ -13,6 +14,7 @@ public sealed class ChatController(IAgentService agent) : ControllerBase
 {
     /// <summary>Send a message; returns the agent's reply plus any new proposals waiting for approval.</summary>
     [HttpPost]
+    [EnableRateLimiting(AuthPolicies.ChatRateLimit)]
     public async Task<ActionResult<ChatResponse>> Post([FromBody] ChatRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Message))

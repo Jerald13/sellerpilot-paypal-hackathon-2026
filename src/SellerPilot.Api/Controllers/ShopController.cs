@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SellerPilot.Api.Agent;
@@ -87,6 +88,7 @@ public sealed class ShopController(AppDbContext db, ICustomerAgentService agent,
     }
 
     [HttpPost("chat")]
+    [EnableRateLimiting(AuthPolicies.ChatRateLimit)]
     public async Task<ActionResult<ShopChatResponse>> Chat([FromBody] ShopChatRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Message))

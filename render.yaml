@@ -1,0 +1,27 @@
+# Render Blueprint for the hosted public demo (render.com -> New -> Blueprint -> pick this repo).
+# Free plan: sleeps after 15 idle minutes and wakes in about a minute; the SQLite demo data resets on each start.
+# Secrets marked sync: false are entered in the Render dashboard, never committed.
+# Also add seed-output.json (from the seed tool) under Environment -> Secret Files.
+services:
+  - type: web
+    name: sellerpilot
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: Shop__PublicDemo
+        value: "true"
+      - key: Shop__SeedFile
+        value: /etc/secrets/seed-output.json
+      - key: Llm__Provider
+        value: Claude
+      - key: Llm__Claude__Model
+        value: claude-haiku-5-5
+      - key: PayPal__ClientId
+        sync: false
+      - key: PayPal__ClientSecret
+        sync: false
+      - key: Llm__Claude__ApiKey
+        sync: false
