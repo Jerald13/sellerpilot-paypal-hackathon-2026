@@ -31,7 +31,7 @@ const badgeClass: Record<PendingAction['type'], string> = {
 
 const approveLabel: Record<PendingAction['type'], string> = {
   Refund: 'Approve refund',
-  InvoiceReminder: 'Approve & send',
+  InvoiceReminder: 'Approve & email',
   BooksCorrection: 'Approve correction',
 }
 
@@ -73,7 +73,7 @@ export function ActionCard({ action, busy, onApprove, onReject, onReturnReceived
 
       {action.type === 'InvoiceReminder' && details.note && (
         <div className="message-preview">
-          <div className="muted">Message that will be sent to the customer:</div>
+          <div className="muted">Email that PayPal will send to the customer when you approve:</div>
           {details.subject && <div className="preview-subject">{details.subject}</div>}
           <div className="preview-note">{details.note}</div>
         </div>
@@ -108,7 +108,7 @@ export function ActionCard({ action, busy, onApprove, onReject, onReturnReceived
           {action.status === 'Executed' && action.type === 'Refund' && action.payPalResultId && (
             <> · PayPal refund ID <code>{action.payPalResultId}</code> · posted to the books</>
           )}
-          {action.status === 'Executed' && action.type === 'InvoiceReminder' && <> · reminder sent through PayPal</>}
+          {action.status === 'Executed' && action.type === 'InvoiceReminder' && <> · PayPal emailed the reminder to the customer</>}
           {action.status === 'Executed' && action.type === 'BooksCorrection' && <> · recorded in the books</>}
           {action.error && <div className="error-text">{action.error}</div>}
           {action.decidedAt && <div className="muted small">{formatTime(action.decidedAt)}</div>}

@@ -44,11 +44,14 @@ export function ChatPanel({ messages, busy, onSend, onNewChat }: Props) {
   return (
     <section className="panel chat">
       <div className="panel-title">
-        <h2>Assistant</h2>
+        <h2>
+          AI assistant <span className="badge badge-ai">AI</span>
+        </h2>
         <button className="button ghost" onClick={onNewChat} disabled={busy}>
           New chat
         </button>
       </div>
+      <p className="chat-note">SellerPilot is an AI. It reads your PayPal data and proposes actions, but it never moves money: you approve every refund or reminder in Approvals.</p>
 
       <div className="messages">
         {messages.length === 0 && (
@@ -66,6 +69,7 @@ export function ChatPanel({ messages, busy, onSend, onNewChat }: Props) {
 
         {messages.map((m) => (
           <div key={m.id} className={`message message-${m.role}`}>
+            {m.role === 'assistant' && <div className="message-label">SellerPilot AI</div>}
             {m.role === 'assistant' ? <Markdown text={m.text} /> : <p>{m.text}</p>}
 
             {m.flags && m.flags.length > 0 && (
@@ -97,7 +101,7 @@ export function ChatPanel({ messages, busy, onSend, onNewChat }: Props) {
           </div>
         ))}
 
-        {busy && <div className="message message-assistant typing">SellerPilot is checking PayPal…</div>}
+        {busy && <div className="message message-assistant typing">SellerPilot AI is checking PayPal…</div>}
         <div ref={endRef} />
       </div>
 

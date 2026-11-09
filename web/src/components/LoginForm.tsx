@@ -1,10 +1,10 @@
-import { useState, type FormEvent } from 'react'
-import { api, type CurrentUser } from '../api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { api, type CurrentUser, type DemoInfo } from '../api'
 
 interface Props {
   title: string
   subtitle: string
-  /** Demo accounts shown as one-click fills (the password still has to be typed). */
+  /** Demo accounts for this screen: one-click fills locally, one-click sign-in on the hosted public demo. */
   demoEmails: string[]
   onSignedIn: (user: CurrentUser) => void
 }
@@ -14,13 +14,17 @@ export function LoginForm({ title, subtitle, demoEmails, onSignedIn }: Props) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [demo, setDemo] = useState<DemoInfo | null>(null)
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
+  useEffect(() => {
+    api.demoInfo().then(setDemo).catch(() => undefined)
+  }, [])
+
+  const run = async (signIn: () => Promise<CurrentUser>) => {
     setBusy(true)
     setError(null)
     try {
-      onSignedIn(await api.login(email, password))
+      onSignedIn(await signIn())
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -28,8 +32,32 @@ export function LoginForm({ title, subtitle, demoEmails, onSignedIn }: Props) {
     }
   }
 
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    void run(() => api.login(email, password))
+  }
+
+  const accounts = demoEmails.map((e) => demo?.accounts.find((a) => a.email === e) ?? { email: e, name: e, role: 'customer' as const })
+
+  if (demo?.publicDemo) {
+    return (
+      <div className="panel login">
+        <h2>{title}</h2>
+        <p className="muted small">{subtitle}</p>
+        <p className="demo-note">Public demo: pick an account, no password needed. Everything runs on the PayPal sandbox, so no real money moves.</p>
+        {accounts.map((a) => (
+          <button key={a.email} type="button" className="button primary" disabled={busy} onClick={() => void run(() => api.demoLogin(a.email))}>
+            Sign in as {a.name}
+            {a.role === 'seller' ? ' (seller)' : ''}
+          </button>
+        ))}
+        {error && <div className="error-text">{error}</div>}
+      </div>
+    )
+  }
+
   return (
-    <form className="panel login" onSubmit={(e) => void submit(e)}>
+    <form className="panel login" onSubmit={submit}>
       <h2>{title}</h2>
       <p className="muted small">{subtitle}</p>
       <label>
@@ -54,7 +82,9 @@ export function LoginForm({ title, subtitle, demoEmails, onSignedIn }: Props) {
           ))}
         </div>
       )}
-      <p className="muted small">Demo password: the <code>Shop__DemoPassword</code> value in your <code>.env</code>.</p>
+      <p className="muted small">
+        Demo password: the <code>Shop__DemoPassword</code> value you set in <code>.env</code> (see the README).
+      </p>
     </form>
   )
 }

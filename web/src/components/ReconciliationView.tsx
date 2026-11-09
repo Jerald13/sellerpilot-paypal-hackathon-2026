@@ -39,6 +39,9 @@ export function ReconciliationView({ onAskAssistant }: Props) {
     }
   }
 
+  const ordersWithProblems = run ? run.ordersChecked - run.ordersMatched : 0
+  const paymentsWithoutOrder = run ? run.findings.filter((f) => f.kind === 'UnknownPayment').length : 0
+
   const ask = (f: Finding) =>
     onAskAssistant(
       `Reconciliation found a problem${f.orderNumber ? ` with order ${f.orderNumber}` : ''}: ${f.message} What should I do? If it can be fixed here, propose the fix.`,
@@ -61,22 +64,24 @@ export function ReconciliationView({ onAskAssistant }: Props) {
 
       {run && (
         <>
-          <div className="summary-tiles">
+          <div className="summary-tiles three">
             <div className="tile">
               <div className="tile-value">{run.ordersChecked}</div>
-              <div className="muted small">orders checked</div>
-            </div>
-            <div className="tile">
-              <div className="tile-value ok">{run.ordersMatched}</div>
-              <div className="muted small">match PayPal</div>
-            </div>
-            <div className="tile">
-              <div className={`tile-value ${run.issuesFound > 0 ? 'bad' : 'ok'}`}>{run.issuesFound}</div>
-              <div className="muted small">issues found</div>
+              <div className="muted small">shop orders paid via PayPal, checked one by one</div>
+              <div className="small tile-breakdown">
+                <span className="ok">{run.ordersMatched} match</span> · <span className={ordersWithProblems > 0 ? 'bad' : 'ok'}>{ordersWithProblems} with a problem</span>
+              </div>
             </div>
             <div className="tile">
               <div className="tile-value">{run.payPalPaymentsChecked}</div>
-              <div className="muted small">PayPal payments scanned</div>
+              <div className="muted small">PayPal payments scanned for ones with no shop order</div>
+              <div className="small tile-breakdown">
+                <span className={paymentsWithoutOrder > 0 ? 'bad' : 'ok'}>{paymentsWithoutOrder} without an order</span>
+              </div>
+            </div>
+            <div className="tile">
+              <div className={`tile-value ${run.issuesFound > 0 ? 'bad' : 'ok'}`}>{run.issuesFound}</div>
+              <div className="muted small">issues to fix in total (listed below)</div>
             </div>
           </div>
           <div className="muted small">

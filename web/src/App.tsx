@@ -3,6 +3,8 @@ import { api, ApiError, type CurrentUser, type Health, type PendingAction } from
 import { ApprovalsPanel } from './components/ApprovalsPanel'
 import { AuditLog } from './components/AuditLog'
 import { ChatPanel, type ChatMessage } from './components/ChatPanel'
+import { AppLoader } from './components/AppLoader'
+import { DemoHome } from './components/DemoHome'
 import { EvalView } from './components/EvalView'
 import { LoginForm } from './components/LoginForm'
 import { OrdersView } from './components/OrdersView'
@@ -15,7 +17,8 @@ const conversationKey = 'sellerpilot.conversationId'
 /** The seller's back office. Everything here needs the seller to be signed in. */
 export default function App() {
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined)
-  const [health, setHealth] = useState<Health | null>(null)
+  // undefined = still loading, null = API unreachable
+  const [health, setHealth] = useState<Health | null | undefined>(undefined)
 
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null))
@@ -29,7 +32,7 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${user?.role === 'seller' ? ' fit-screen' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <span className="logo" aria-hidden>
@@ -41,14 +44,19 @@ export default function App() {
           </div>
         </div>
         <div className="topbar-right">
-          <HealthBadges health={health} />
-          <a className="button ghost" href="/shop" title="The customer-facing shop">
+          {health !== undefined && <HealthBadges health={health} />}
+          <a className="button outline" href="/shop" title="The customer-facing shop">
             Storefront ↗
           </a>
           {user && (
             <span className="user">
-              {user.name}
-              <button className="button ghost" onClick={() => void signOut()}>
+              <span className="user-chip" title={user.email}>
+                <span className="avatar" aria-hidden>
+                  {user.name.charAt(0).toUpperCase()}
+                </span>
+                {user.name}
+              </span>
+              <button className="button outline" onClick={() => void signOut()}>
                 Sign out
               </button>
             </span>
@@ -57,8 +65,9 @@ export default function App() {
         </div>
       </header>
 
-      {user === undefined && <main className="layout single"><div className="muted">Loading…</div></main>}
-      {user === null && (
+      {(user === undefined || (user === null && health === undefined)) && <AppLoader />}
+      {user === null && health?.auth?.publicDemo && <DemoHome onSellerSignedIn={setUser} />}
+      {user === null && health !== undefined && !health?.auth?.publicDemo && (
         <main className="layout single centered">
           {health?.auth?.configured === false && (
             <div className="warning">Sign-in is not configured: set <code>Shop__DemoPassword</code> in <code>.env</code> and restart the API.</div>
@@ -194,10 +203,12 @@ function BackOffice({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <>
-      <nav className="tabs subnav">
+      <nav className="tabs subnav" aria-label="Back office sections">
         {tabs.map((t) => (
           <button
             key={t.id}
+            type="button"
+            aria-current={tab === t.id ? 'page' : undefined}
             className={tab === t.id ? 'active' : ''}
             onClick={() => {
               setTab(t.id)
@@ -258,7 +269,7 @@ export function ThemeToggle() {
     setTheme(next)
   }
   return (
-    <button className="button ghost theme-toggle" onClick={toggle} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+    <button className="button outline theme-toggle" onClick={toggle} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
       {theme === 'dark' ? '☀ Light' : '☾ Dark'}
     </button>
   )

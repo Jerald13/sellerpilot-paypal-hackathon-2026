@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ThemeToggle } from './App'
+import { AppLoader } from './components/AppLoader'
 import {
   api,
+  ApiError,
   formatDate,
   formatMoney,
   formatTime,
@@ -50,20 +52,25 @@ export default function ShopApp() {
         <div className="topbar-right">
           {user && (
             <span className="user">
-              {user.name}
-              <button className="button ghost" onClick={() => void signOut()}>
+              <span className="user-chip" title={user.email}>
+                <span className="avatar" aria-hidden>
+                  {user.name.charAt(0).toUpperCase()}
+                </span>
+                {user.name}
+              </span>
+              <button className="button outline" onClick={() => void signOut()}>
                 Sign out
               </button>
             </span>
           )}
-          <a className="button ghost" href="/" title="SellerPilot back office (for the seller)">
+          <a className="button outline" href="/" title="SellerPilot back office (for the seller)">
             Seller back office ↗
           </a>
           <ThemeToggle />
         </div>
       </header>
 
-      {user === undefined && <main className="layout single"><div className="muted">Loading…</div></main>}
+      {user === undefined && <AppLoader label="Opening the shop…" />}
       {user === null && (
         <main className="layout shop-home">
           <section className="panel">
@@ -118,7 +125,7 @@ function CustomerArea() {
   const [usedOffers, setUsedOffers] = useState<Set<string>>(new Set())
   const [draft, setDraft] = useState('')
   const nextId = useRef(1)
-  const endRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const add = (m: Omit<ShopMessage, 'id'>) => setMessages((current) => [...current, { ...m, id: nextId.current++ }])
   const refresh = () => {
@@ -132,7 +139,9 @@ function CustomerArea() {
   }, [])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // Scroll only the message list; scrollIntoView would also scroll the whole page down.
+    const list = listRef.current
+    list?.scrollTo({ top: list.scrollHeight, behavior: 'smooth' })
   }, [messages, busy])
 
   const send = async (text: string) => {
@@ -164,7 +173,19 @@ function CustomerArea() {
       })
       refresh()
     } catch (e) {
-      add({ role: 'error', text: `The request could not be sent: ${(e as Error).message}` })
+      // Let the customer try again once the problem is fixed.
+      setUsedOffers((current) => {
+        const next = new Set(current)
+        next.delete(offerKey(offer, messageId))
+        return next
+      })
+      const signedOut = e instanceof ApiError && (e.status === 401 || e.status === 403)
+      add({
+        role: 'error',
+        text: signedOut
+          ? 'The request could not be sent: you are no longer signed in as this customer (perhaps you signed in as someone else in another tab). Reload the page and sign in again.'
+          : `The request could not be sent: ${(e as Error).message}`,
+      })
     }
   }
 
@@ -229,12 +250,15 @@ function CustomerArea() {
 
       <section className="panel chat">
         <div className="panel-title">
-          <h2>Need help with an order?</h2>
+          <h2>
+            Chat with our AI assistant <span className="badge badge-ai">AI</span>
+          </h2>
         </div>
-        <div className="messages">
+        <p className="chat-note">You are chatting with an AI, not the shop owner. It can check your orders and suggest a refund; the shop owner reviews every refund before any money moves.</p>
+        <div className="messages" ref={listRef}>
           {messages.length === 0 && (
             <div className="empty">
-              Ask about your orders or a refund. Refunds are reviewed by the shop owner.
+              Ask about your orders or a refund.
               <div className="suggestions">
                 {suggestions.map((s) => (
                   <button key={s} className="chip" onClick={() => void send(s)} disabled={busy}>
@@ -246,6 +270,7 @@ function CustomerArea() {
           )}
           {messages.map((m) => (
             <div key={m.id} className={`message message-${m.role === 'customer' ? 'user' : m.role === 'error' ? 'error' : 'assistant'} ${m.role === 'system' ? 'message-system' : ''}`}>
+              {m.role === 'assistant' && <div className="message-label">AI assistant</div>}
               {m.role === 'assistant' ? <Markdown text={m.text} /> : <p>{m.text}</p>}
               {m.offers?.map((o) => (
                 <div key={offerKey(o, m.id)} className="offer">
@@ -260,8 +285,7 @@ function CustomerArea() {
               ))}
             </div>
           ))}
-          {busy && <div className="message message-assistant typing">Checking your order…</div>}
-          <div ref={endRef} />
+          {busy && <div className="message message-assistant typing">The AI assistant is checking your order…</div>}
         </div>
         <form className="composer" onSubmit={submit}>
           <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="e.g. My cushion covers arrived torn. Can I get USD 60 back?" maxLength={2000} disabled={busy} aria-label="Message" />

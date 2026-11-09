@@ -143,25 +143,47 @@ code {
   font-size: 1.2rem;
 }
 
+/* Section tabs: a segmented button bar */
 .tabs {
-  display: flex;
+  display: inline-flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  align-self: flex-start;
 }
 
 .tabs button {
-  border: none;
+  border: 1px solid transparent;
   background: none;
-  padding: 0.5rem 0.9rem;
-  border-radius: 8px;
+  padding: 0.45rem 1rem;
+  border-radius: 7px;
   font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
   color: var(--muted);
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tabs button:hover {
+  background: var(--subtle);
+  color: var(--text);
 }
 
 .tabs button.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
   font-weight: 600;
+}
+
+.tabs button:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .health {
@@ -273,6 +295,20 @@ code {
 .button.ghost {
   border-color: transparent;
   color: var(--muted);
+}
+
+/* Header actions: clearly clickable, but quieter than primary buttons */
+.button.outline {
+  border-color: var(--border);
+  background: var(--subtle);
+  color: var(--text);
+  font-weight: 500;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.button.outline:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .chip {
@@ -582,12 +618,94 @@ code {
 .user {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.5rem;
   font-size: 0.9rem;
 }
 
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.7rem 0.2rem 0.2rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 0.8rem;
+}
+
 .subnav {
-  padding: 0.5rem 1.5rem 0;
+  margin: 0.75rem 1.5rem 0;
+}
+
+/* Back office: exactly one screen tall. Header and tabs keep their size; only the panels' contents scroll. */
+.app.fit-screen {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app.fit-screen > .layout {
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.app.fit-screen .chat,
+.app.fit-screen .approvals {
+  height: auto;
+  min-height: 0;
+}
+
+.app.fit-screen .approvals,
+.app.fit-screen .data-view,
+.app.fit-screen .audit {
+  overflow-y: auto;
+}
+
+@media (max-width: 900px) {
+  /* Narrow screens: normal page scrolling instead of squeezed panels. */
+  .app.fit-screen {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .app.fit-screen > .layout {
+    overflow: visible;
+    grid-template-rows: none;
+  }
+
+  .app.fit-screen .chat {
+    height: 75vh;
+  }
+
+  /* Header wraps instead of pushing the page sideways. */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .topbar-right {
+    margin-left: 0;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .subnav {
+    margin: 0.75rem 1rem 0;
+  }
 }
 
 .layout.centered {
@@ -697,6 +815,36 @@ code {
   color: var(--accent);
 }
 
+.badge-ai {
+  background: var(--accent-soft);
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+.demo-note {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.chat-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.message-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+
 .badge-customer {
   background: var(--warn-soft);
   color: var(--warn);
@@ -753,6 +901,22 @@ code {
 }
 
 .tile-value.bad {
+  color: var(--bad);
+}
+
+.summary-tiles.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tile-breakdown {
+  margin-top: 0.35rem;
+}
+
+.tile-breakdown .ok {
+  color: var(--ok);
+}
+
+.tile-breakdown .bad {
   color: var(--bad);
 }
 
@@ -894,7 +1058,8 @@ code {
 @media (max-width: 900px) {
   .shop-home,
   .order-detail,
-  .summary-tiles {
+  .summary-tiles,
+  .summary-tiles.three {
     grid-template-columns: 1fr;
   }
 }
@@ -1004,3 +1169,206 @@ code {
   align-items: center;
 }
 
+
+/* Public demo landing page: one link, both roles */
+.demo-home {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.demo-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.demo-hero h2 {
+  font-size: 1.8rem;
+}
+
+.demo-hero p {
+  max-width: 68ch;
+  line-height: 1.55;
+}
+
+.demo-roles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.demo-role {
+  gap: 0.9rem;
+  border-top: 3px solid var(--accent);
+}
+
+.demo-role-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.demo-role-head h3 {
+  font-size: 1.15rem;
+}
+
+.demo-role-icon {
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 1.4rem;
+}
+
+.demo-role p {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.demo-go {
+  align-self: flex-start;
+  padding: 0.6rem 1.1rem;
+  font-weight: 600;
+}
+
+.demo-customers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.demo-steps ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .demo-roles {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-home {
+    padding: 1.25rem 1rem 2rem;
+  }
+}
+
+/* Full-page loader: plane inside a spinning ring, plus pulsing dots */
+.app-loader {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 3rem 1rem;
+  min-height: 60vh;
+}
+
+.loader-mark {
+  position: relative;
+  width: 4.5rem;
+  height: 4.5rem;
+  display: grid;
+  place-items: center;
+}
+
+.loader-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: loader-spin 0.9s linear infinite;
+}
+
+.loader-plane {
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-size: 1.3rem;
+  animation: loader-float 1.6s ease-in-out infinite;
+}
+
+.loader-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.loader-dots {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.loader-dots span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: loader-pulse 1.2s ease-in-out infinite;
+}
+
+.loader-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.loader-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loader-float {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes loader-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-ring,
+  .loader-plane,
+  .loader-dots span {
+    animation: none;
+  }
+}
+
+/* Animated explainer on the demo landing page (16:9 stage plus a row of controls) */
+.demo-explainer iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #070b14;
+}

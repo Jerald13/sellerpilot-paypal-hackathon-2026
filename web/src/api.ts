@@ -91,7 +91,7 @@ export interface Health {
     features: { invoicing: boolean; transactionSearch: boolean } | null
   }
   llm: { provider: string; model: string; configured: boolean }
-  auth?: { configured: boolean }
+  auth?: { configured: boolean; publicDemo?: boolean }
   shop?: { seeded: boolean; shopName: string }
 }
 
@@ -99,6 +99,12 @@ export interface CurrentUser {
   role: 'seller' | 'customer'
   name: string
   email: string
+}
+
+export interface DemoInfo {
+  /** Hosted public demo: one-click sign-in, no password. */
+  publicDemo: boolean
+  accounts: CurrentUser[]
 }
 
 export interface LedgerEntry {
@@ -309,7 +315,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // Not a problem-details body; keep the status text.
     }
     if (response.status === 401 && !problemTitleIsSpecific(message)) message = 'Please sign in.'
-    if (response.status === 403) message = 'This account is not allowed to do that.'
+    // A bare 403 comes from the role check; a 403 with its own title explains itself, so keep that.
+    if (response.status === 403 && /^(403\b|Forbidden$)/.test(message)) message = 'This account is not allowed to do that.'
     throw new ApiError(message, response.status)
   }
   if (response.status === 204) return undefined as T
@@ -328,6 +335,8 @@ export const api = {
   login: (email: string, password: string) => post<CurrentUser>('/api/auth/login', { email, password }),
   logout: () => post<void>('/api/auth/logout'),
   me: () => request<CurrentUser>('/api/auth/me'),
+  demoInfo: () => request<DemoInfo>('/api/auth/demo'),
+  demoLogin: (email: string) => post<CurrentUser>('/api/auth/demo-login', { email }),
 
   // Seller back office
   chat: (message: string, conversationId: string | null) => post<ChatResponse>('/api/chat', { message, conversationId }),
