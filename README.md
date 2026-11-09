@@ -6,7 +6,9 @@ SellerPilot helps a one-person online shop (think a seller of handmade scarves a
 
 > Built for the PayPal AI Hackathon 2026. **PayPal sandbox only.**
 >
-> Demo video: _TODO: link_ · Eval score: **44/44** on `claude-haiku-5-5` (1 Nov 2026), about $0.001 per case
+> Live demo: _TODO: link_ (free hosting: the first visit can take about a minute to wake up) · Demo video: _TODO: link_
+>
+> Eval score: **44/44** on `claude-haiku-5-5` (1 Nov 2026), about $0.001 per case
 
 ## Screenshots
 
@@ -136,7 +138,14 @@ Worth a look: in `refund-07` the model *did* try to propose a refund on a paymen
 
 ## Tech stack
 
-ASP.NET Core 10 (C#) · EF Core + SQLite · PayPal REST APIs (sandbox) · Claude (official Anthropic C# SDK, `claude-opus-5-5`) or Gemini · React + Vite + TypeScript · xUnit + NSubstitute
+ASP.NET Core 10 (C#) · EF Core + SQLite · PayPal REST APIs (sandbox) · Claude (official Anthropic C# SDK) or Gemini · React + Vite + TypeScript · xUnit + NSubstitute · Docker + Render for the hosted demo
+
+## AI tools used
+
+- **Claude Haiku 5.5** (`claude-haiku-5-5`, Anthropic API through the official C# SDK) runs both assistants with tool calling. The seller assistant has 8 tools (orders, payments, invoices, transaction search, shop books, reconciliation, and the propose-only refund, reminder and books-correction tools). The customer assistant has 2 tools (the customer's own orders, and refund options worked out by code). Prompt caching keeps a message at about USD 0.001. The model is configurable (`Llm__Claude__Model`), and Gemini is supported behind the same `ILlmClient` interface.
+- **The AI never moves money.** It can only propose; the seller approves, the proposal is checked again against live PayPal data, and the PayPal call is sent with an idempotency key. PayPal notes and memos are treated as data, and suspicious instructions in them are withheld from the model.
+- **Evaluation:** 44 scripted conversations (`eval/cases.json`) are run against the real model and scored in code; results and cost per run show in the back office's Eval tab. Haiku scored 44/44, so the demo uses it instead of a larger, more expensive model.
+- **Claude Code** was used during development as a pair programmer (see the last section).
 
 ## Run it locally
 
@@ -177,6 +186,17 @@ ASP.NET Core 10 (C#) · EF Core + SQLite · PayPal REST APIs (sandbox) · Claude
 
    The API builds the demo shop's books from `seed-output.json` the first time it starts. Sign in to the back office as `emma@sellerpilot.test`, and to the storefront as `john.doe@example.com` (or Alice, Ben, Chloe), with the demo password.
 
+## Hosted demo (Render, free plan)
+
+The repo includes a `Dockerfile` (the API also serves the built React app) and a `render.yaml` Blueprint.
+
+1. On [render.com](https://render.com), sign in with GitHub and choose **New → Blueprint**, then pick this repo.
+2. Enter the secrets it asks for: `PayPal__ClientId`, `PayPal__ClientSecret`, `Llm__Claude__ApiKey`.
+3. Under **Environment → Secret Files**, add `seed-output.json` from the seed tool (step 3 above).
+4. Deploy. The hosted copy runs with `Shop__PublicDemo=true`: visitors sign in with one click as Emma or a demo customer, no password, and chat is limited to 10 messages a minute per visitor. Set a monthly spend limit for your API key in the Anthropic console.
+
+The free plan sleeps after 15 idle minutes and wakes in about a minute. Its demo database lives in the container and is rebuilt from `seed-output.json` on every start; PayPal sandbox data is not reset, so a refund a visitor approves stays refunded.
+
 ## Tests
 
 ```bash
@@ -189,9 +209,14 @@ dotnet run --project tools/SellerPilot.Eval     # live eval: --case refund-01,in
 - Demo sign-in: one seller and four customers share one configured demo password; no sign-up, password reset or 2FA (needed before any real use).
 - Chat history is in memory and is lost on restart; the audit log, proposals, books and reconciliation runs persist in SQLite.
 - Seeded orders count as delivered the day after the seed run, so storefront refund cases need a re-seed after the 30-day return window.
+- The hosted public demo lets anyone approve sandbox refunds, so demo orders get used up over time; re-seed to refresh them. The Eval tab can't start runs there (Development only).
 - Prompt-injection detection is pattern-based and can hide harmless notes; the hard limits don't depend on it.
 - Next: dispute summaries with suggested replies, PayPal webhooks to post payments and refunds to the books as they happen, scheduled reconciliation with a morning summary, multi-currency explanations (MYR/USD/SGD), monitoring of agent errors.
 
 ## Built with AI-assisted development
 
 Built with Claude Code as a pair programmer: plan first, small slices, tests for every service. All code was reviewed and tested before it was committed.
+
+## License
+
+[MIT](LICENSE)
