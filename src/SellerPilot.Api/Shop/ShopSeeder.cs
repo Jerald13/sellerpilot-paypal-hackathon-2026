@@ -19,6 +19,29 @@ public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, T
 
     public async Task<ShopSeedResult> SeedFromRepositoryAsync(string? repoRoot, CancellationToken ct)
     {
+        var path = Path.Combine(repoRoot ?? Directory.GetCurrentDirectory(), options.Value.SeedFile);
+        SeedOutputFile? seed = null;
+        if (File.Exists(path))
+        {
+            try
+            {
+                seed = JsonSerializer.Deserialize<SeedOutputFile>(await File.ReadAllTextAsync(path, ct), SeedOutputFile.Json);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogWarning(ex, "Could not read {SeedFile}", path);
+                if (!await db.Customers.AnyAsync(ct))
+                {
+                    return new ShopSeedResult(false, $"{options.Value.SeedFile} could not be read.");
+                }
+            }
+        }
+
+        if (seed is not null)
+        {
+            return await SeedAsync(seed, ct);
+        }
+
         if (await db.Customers.AnyAsync(ct))
         {
             await SyncDemoCatalogAsync(ct);
@@ -26,24 +49,9 @@ public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, T
             return new ShopSeedResult(false, "The shop data already exists.");
         }
 
-        var path = Path.Combine(repoRoot ?? Directory.GetCurrentDirectory(), options.Value.SeedFile);
-        if (!File.Exists(path))
-        {
-            return new ShopSeedResult(false, $"{options.Value.SeedFile} not found; run the seed tool first, then restart.");
-        }
-
-        SeedOutputFile? seed;
-        try
-        {
-            seed = JsonSerializer.Deserialize<SeedOutputFile>(await File.ReadAllTextAsync(path, ct), SeedOutputFile.Json);
-        }
-        catch (JsonException ex)
-        {
-            logger.LogWarning(ex, "Could not read {SeedFile}", path);
-            return new ShopSeedResult(false, $"{options.Value.SeedFile} could not be read.");
-        }
-
-        return seed is null ? new ShopSeedResult(false, "The seed file is empty.") : await SeedAsync(seed, ct);
+        return File.Exists(path)
+            ? new ShopSeedResult(false, "The seed file is empty.")
+            : new ShopSeedResult(false, $"{options.Value.SeedFile} not found; run the seed tool first, then restart.");
     }
 
     public async Task<ShopSeedResult> SeedAsync(SeedOutputFile seed, CancellationToken ct)
@@ -51,8 +59,9 @@ public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, T
         if (await db.Customers.AnyAsync(ct))
         {
             await SyncDemoCatalogAsync(ct);
+            var added = await AddMissingOrdersAsync(seed, ct);
             await ApplyDemoPasswordsAsync(ct);
-            return new ShopSeedResult(false, "The shop data already exists.");
+            return new ShopSeedResult(false, added > 0 ? $"The shop data already exists; added {added} new orders." : "The shop data already exists.");
         }
 
         var now = time.GetUtcNow().UtcDateTime;
@@ -75,53 +84,7 @@ public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, T
                 continue;
             }
 
-            var product = products[spec.Sku];
-            var placedAt = placed.AddMinutes(index);
-            var order = new ShopOrder
-            {
-                OrderNumber = paypal.Reference,
-                Customer = customers[spec.CustomerKey],
-                PaymentMethod = PaymentMethod.PayPal,
-                Currency = paypal.Currency,
-                Subtotal = product.Price,
-                Discount = spec.Discount,
-                DiscountCode = spec.DiscountCode,
-                Total = product.Price - spec.Discount,
-                PlacedAt = placedAt,
-                PayPalOrderId = paypal.OrderId,
-                PayPalCaptureId = paypal.CaptureId,
-                Lines = [new ShopOrderLine { Sku = product.Sku, Name = product.Name, Quantity = 1, UnitPrice = product.Price, ReturnWindowDays = product.ReturnWindowDays }],
-            };
-            SetFulfilment(order, spec.Status, now);
-
-            if (spec.BookPayment && paypal.CaptureId is not null)
-            {
-                order.LedgerEntries.Add(new LedgerEntry
-                {
-                    Type = LedgerEntryType.Payment,
-                    Amount = paypal.Amount,
-                    Currency = paypal.Currency,
-                    PayPalTransactionId = paypal.CaptureId,
-                    Source = LedgerSources.Checkout,
-                    RecordedAt = placedAt.AddMinutes(1),
-                    Note = "PayPal checkout",
-                });
-            }
-
-            if (spec.BookSeededRefund && paypal.RefundId is not null && paypal.PlannedRefund is { } refunded)
-            {
-                order.LedgerEntries.Add(new LedgerEntry
-                {
-                    Type = LedgerEntryType.Refund,
-                    Amount = refunded,
-                    Currency = paypal.Currency,
-                    PayPalTransactionId = paypal.RefundId,
-                    Source = LedgerSources.Checkout,
-                    RecordedAt = placedAt.AddMinutes(5),
-                    Note = "Refund recorded by the shop",
-                });
-            }
-
+            var order = BuildOrder(spec, paypal, customers[spec.CustomerKey], products[spec.Sku], placed.AddMinutes(index), now);
             orders.Add(order);
         }
 
@@ -161,6 +124,96 @@ public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, T
         await ApplyDemoPasswordsAsync(ct);
         logger.LogInformation("Shop data created: {Orders} orders, {Backfilled} executed refunds posted to the books", orders.Count, backfilled);
         return new ShopSeedResult(true, $"Created {customers.Count} customers and {orders.Count} orders.");
+    }
+
+    /// <summary>
+    /// Adds the shop orders for seed entries that appeared after the shop was created (the seed tool's `add` command),
+    /// with their payment and refund in the books. Orders already in the shop are never touched.
+    /// </summary>
+    private async Task<int> AddMissingOrdersAsync(SeedOutputFile seed, CancellationToken ct)
+    {
+        var known = (await db.ShopOrders.Where(o => o.PayPalOrderId != null).Select(o => o.PayPalOrderId!).ToListAsync(ct)).ToHashSet();
+        var customers = await db.Customers.ToListAsync(ct);
+        var products = await db.Products.ToListAsync(ct);
+        var now = time.GetUtcNow().UtcDateTime;
+        var added = 0;
+        foreach (var (spec, index) in ShopSeedData.Orders.Select((s, i) => (s, i)))
+        {
+            if (!seed.Orders.TryGetValue(spec.SeedKey, out var paypal) || paypal.OrderId is null || paypal.CaptureId is null || known.Contains(paypal.OrderId))
+            {
+                continue;
+            }
+
+            var email = ShopSeedData.Customers.First(c => c.Key == spec.CustomerKey).Email.ToLowerInvariant();
+            var customer = customers.FirstOrDefault(c => c.Email == email);
+            var product = products.FirstOrDefault(p => p.Sku == spec.Sku);
+            if (customer is null || product is null)
+            {
+                logger.LogWarning("Seed order {Key} skipped: its customer or product is missing from the shop", spec.SeedKey);
+                continue;
+            }
+
+            db.ShopOrders.Add(BuildOrder(spec, paypal, customer, product, seed.GeneratedAt.UtcDateTime.AddMinutes(index), now));
+            added++;
+        }
+
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Added {Count} new seed orders to the shop", added);
+        }
+
+        return added;
+    }
+
+    private static ShopOrder BuildOrder(ShopSeedData.OrderSeed spec, SeedOutputOrder paypal, Customer customer, Product product, DateTime placedAt, DateTime now)
+    {
+        var order = new ShopOrder
+        {
+            OrderNumber = paypal.Reference,
+            Customer = customer,
+            PaymentMethod = PaymentMethod.PayPal,
+            Currency = paypal.Currency,
+            Subtotal = product.Price,
+            Discount = spec.Discount,
+            DiscountCode = spec.DiscountCode,
+            Total = product.Price - spec.Discount,
+            PlacedAt = placedAt,
+            PayPalOrderId = paypal.OrderId,
+            PayPalCaptureId = paypal.CaptureId,
+            Lines = [new ShopOrderLine { Sku = product.Sku, Name = product.Name, Quantity = 1, UnitPrice = product.Price, ReturnWindowDays = product.ReturnWindowDays }],
+        };
+        SetFulfilment(order, spec.Status, now);
+
+        if (spec.BookPayment && paypal.CaptureId is not null)
+        {
+            order.LedgerEntries.Add(new LedgerEntry
+            {
+                Type = LedgerEntryType.Payment,
+                Amount = paypal.Amount,
+                Currency = paypal.Currency,
+                PayPalTransactionId = paypal.CaptureId,
+                Source = LedgerSources.Checkout,
+                RecordedAt = placedAt.AddMinutes(1),
+                Note = "PayPal checkout",
+            });
+        }
+
+        if (spec.BookSeededRefund && paypal.RefundId is not null && paypal.PlannedRefund is { } refunded)
+        {
+            order.LedgerEntries.Add(new LedgerEntry
+            {
+                Type = LedgerEntryType.Refund,
+                Amount = refunded,
+                Currency = paypal.Currency,
+                PayPalTransactionId = paypal.RefundId,
+                Source = LedgerSources.Checkout,
+                RecordedAt = placedAt.AddMinutes(5),
+                Note = "Refund recorded by the shop",
+            });
+        }
+
+        return order;
     }
 
     /// <summary>Refunds SellerPilot executed before the books existed belong in the books too.</summary>

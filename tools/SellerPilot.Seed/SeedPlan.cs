@@ -20,7 +20,23 @@ public static class SeedPlan
         new("big_order", "Test Buyer Chris", "USD", 150.00m, "Wall hanging", "Wall hanging, large"),
         new("small_order", "Test Buyer Fiona", "USD", 15.00m, "Fabric keychain", "Fabric keychain"),
         new("sgd_small", "Test Buyer Will", "SGD", 32.00m, "Bookmark set", "Bookmark set"),
+
+        // Copies of "partially_refunded". Approving a refund uses an order up for good, so the eval and the demo
+        // video each get their own. Added later with the `add` command (2026-11-09).
+        new("eval_partial", "Test Buyer Megan", "USD", 80.00m, "Cushion covers", "Cushion covers (pair)", RefundAfterCapture: 30.00m),
+        new("video_partial", "Test Buyer Megan", "USD", 80.00m, "Cushion covers", "Cushion covers (pair)", RefundAfterCapture: 30.00m),
+        new("spare_partial", "Test Buyer Megan", "USD", 80.00m, "Cushion covers", "Cushion covers (pair)", RefundAfterCapture: 30.00m),
     ];
+
+    /// <summary>The planned orders that seed-output.json doesn't have yet, or that failed before (what `add` creates).</summary>
+    public static IReadOnlyList<OrderSpec> MissingOrders(IReadOnlyDictionary<string, SeededOrder> existing) =>
+        Orders.Where(o => !existing.TryGetValue(o.Key, out var seeded) || seeded.Status == "FAILED").ToList();
+
+    /// <summary>The next order number after the highest one already used, e.g. SP-DVAN-1010 → 1011. PayPal needs them unique.</summary>
+    public static int NextOrderNumber(IEnumerable<SeededOrder> existing) =>
+        existing.Select(o => int.TryParse(o.Reference.Split('-').Last(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 1000)
+            .DefaultIfEmpty(1000)
+            .Max() + 1;
 
     public static readonly IReadOnlyList<InvoiceSpec> Invoices =
     [

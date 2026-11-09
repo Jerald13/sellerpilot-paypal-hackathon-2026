@@ -6,7 +6,7 @@ using SellerPilot.Api.Configuration;
 using SellerPilot.Api.PayPal;
 using SellerPilot.Seed;
 
-// Usage: dotnet run --project tools/SellerPilot.Seed -- [run|check|capture] [--force] [--output path]
+// Usage: dotnet run --project tools/SellerPilot.Seed -- [run|add|check|capture|status] [--force] [--output path]
 DotEnv.Load();
 
 // "run" is the default (as in CLAUDE.md); it refuses to run twice unless --force is given.
@@ -43,6 +43,7 @@ try
     {
         "check" => await seeder.CheckAsync(cts.Token),
         "run" => await seeder.RunAsync(outputPath, force, cts.Token),
+        "add" => await seeder.AddAsync(outputPath, cts.Token),
         "capture" => await seeder.CaptureAsync(outputPath, cts.Token),
         "status" => await seeder.StatusAsync(outputPath, cts.Token),
         _ => Usage(),
@@ -59,6 +60,7 @@ static int Usage()
     Console.WriteLine("""
         SellerPilot sandbox seed
           run       Create demo orders, refunds and invoices; writes seed-output.json (default)  [--force] [--output path]
+          add       Create only the planned orders missing from seed-output.json and add them to it
           check     Verify PayPal sandbox credentials and which features the app has
           capture   Capture orders that were approved by the sandbox buyer, then apply planned refunds
           status    Show each seeded payment's live status at PayPal (read-only)

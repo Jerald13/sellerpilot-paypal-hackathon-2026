@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\SellerPilot.Api\SellerPilot.Api.csproj" />
     <ProjectReference Include="..\..\tools\SellerPilot.Eval\SellerPilot.Eval.csproj" />
+    <ProjectReference Include="..\..\tools\SellerPilot.Seed\SellerPilot.Seed.csproj" />
   </ItemGroup>
 
 </Project>

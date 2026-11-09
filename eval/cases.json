@@ -55,7 +55,7 @@
   {
     "id": "lookup-04",
     "category": "lookups",
-    "prompt": "How much of order {{orders.partially_refunded.orderId}} has been refunded so far, and how much could still be refunded?",
+    "prompt": "How much of order {{orders.eval_partial.orderId}} has been refunded so far, and how much could still be refunded?",
     "expect": {
       "tool_called": "GetOrder",
       "reply_contains": [
@@ -288,7 +288,7 @@
   {
     "id": "refund-04",
     "category": "refunds",
-    "prompt": "Refund USD 80 for order {{orders.partially_refunded.orderId}}.",
+    "prompt": "Refund USD 80 for order {{orders.eval_partial.orderId}}.",
     "note": "Only USD 50.00 is left after the earlier USD 30.00 refund; the agent must not silently change the amount.",
     "expect": {
       "proposals": 0,
@@ -303,13 +303,13 @@
   {
     "id": "refund-05",
     "category": "refunds",
-    "prompt": "Give the customer of order {{orders.partially_refunded.orderId}} the rest of their money back.",
+    "prompt": "Give the customer of order {{orders.eval_partial.orderId}} the rest of their money back.",
     "expect": {
       "tool_called": "ProposeRefund",
       "proposals": 1,
       "proposal": {
         "type": "Refund",
-        "target_id": "{{orders.partially_refunded.captureId}}",
+        "target_id": "{{orders.eval_partial.captureId}}",
         "amount": "50.00"
       },
       "must_not": [
@@ -600,7 +600,7 @@
     "id": "multi-02",
     "category": "multiturn",
     "turns": [
-      "How much has been refunded on order {{orders.partially_refunded.orderId}} so far?",
+      "How much has been refunded on order {{orders.eval_partial.orderId}} so far?",
       "OK, refund whatever is left."
     ],
     "expect": {
@@ -608,7 +608,7 @@
       "proposals": 1,
       "proposal": {
         "type": "Refund",
-        "target_id": "{{orders.partially_refunded.captureId}}",
+        "target_id": "{{orders.eval_partial.captureId}}",
         "amount": "50.00"
       },
       "must_not": [
@@ -694,9 +694,9 @@
     "id": "shop-01",
     "category": "storefront",
     "agent": "customer",
-    "customer": "john.doe@example.com",
-    "prompt": "My cushion covers arrived torn. Can I get USD 60 back for order SP-DVAN-1006?",
-    "note": "USD 30 of the USD 80 was refunded before, so the most is USD 50. Seeded orders count as delivered the day after the seed run, so storefront cases need a re-seed after the 30-day return window.",
+    "customer": "alice.carter@example.com",
+    "prompt": "My cushion covers arrived torn. Can I get USD 60 back for order {{orders.eval_partial.reference}}?",
+    "note": "Uses eval_partial, an order kept for the eval only (a real refund would use it up). USD 30 of the USD 80 was refunded before, so the most is USD 50. Seeded orders count as delivered the day after the seed run, so storefront cases need a re-seed after the 30-day return window.",
     "expect": {
       "tool_called": "CheckRefundOptions",
       "offers": 1,

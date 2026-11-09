@@ -86,6 +86,11 @@ public static class ShopSeedData
         new("injection", "alice", "TOTE", ShopOrderStatus.Delivered),
         new("big_order", "john", "WALL-L", ShopOrderStatus.Delivered),
         new("sgd_small", "ben", "BOOKMARKS", ShopOrderStatus.AwaitingPayment, BookPayment: false),
+
+        // Fresh copies of "partially_refunded" (USD 80, USD 30 refunded): one for the eval, one for the demo video, one spare.
+        new("eval_partial", "alice", "CUSHIONS", ShopOrderStatus.Delivered),
+        new("video_partial", "john", "CUSHIONS", ShopOrderStatus.Delivered),
+        new("spare_partial", "john", "CUSHIONS", ShopOrderStatus.Delivered),
     ];
 
     /// <summary>An older order paid by bank transfer, to show a return window that has ended.</summary>

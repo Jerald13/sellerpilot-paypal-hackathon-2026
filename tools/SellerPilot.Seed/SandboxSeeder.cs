@@ -185,6 +185,84 @@ public sealed class SandboxSeeder(IHttpClientFactory httpClientFactory, IPayPalT
         return output.Orders.Values.Any(o => o.Status == "FAILED") || output.Invoices.Values.Any(i => i.Status == "FAILED") ? 2 : 0;
     }
 
+    /// <summary>
+    /// Creates only the planned orders that seed-output.json doesn't have yet (with their planned refunds) and adds them to the file.
+    /// Everything already seeded, orders and invoices, is left alone.
+    /// </summary>
+    public async Task<int> AddAsync(string outputPath, CancellationToken ct)
+    {
+        if (!File.Exists(outputPath))
+        {
+            Console.Error.WriteLine($"{outputPath} not found. Run `dotnet run --project tools/SellerPilot.Seed -- run` first.");
+            return 1;
+        }
+
+        var output = JsonSerializer.Deserialize<SeedOutput>(await File.ReadAllTextAsync(outputPath, ct), SeedOutput.Json)!;
+        var missing = SeedPlan.MissingOrders(output.Orders);
+        if (missing.Count == 0)
+        {
+            Console.WriteLine("Nothing to add: every planned order is already in seed-output.json.");
+            return 0;
+        }
+
+        // Try the card flow first; like `run`, fall back to buyer approval when the sandbox app can't take cards.
+        var useCard = !configuration.GetValue("Seed:SkipCard", false);
+        var number = SeedPlan.NextOrderNumber(output.Orders.Values.Where(o => o.Status != "FAILED"));
+        Console.WriteLine($"Adding {missing.Count} orders (run tag {output.RunTag}, from number {number})...");
+        foreach (var spec in missing)
+        {
+            var seeded = new SeededOrder
+            {
+                Buyer = spec.Buyer,
+                Currency = spec.Currency,
+                Amount = spec.Amount,
+                Description = spec.Description,
+                Reference = $"SP-{output.RunTag}-{number++}",
+                PlannedRefund = spec.RefundAfterCapture,
+            };
+            output.Orders[spec.Key] = seeded;
+            try
+            {
+                if (useCard)
+                {
+                    try
+                    {
+                        await CreateCardOrderAsync(spec, seeded, output, ct);
+                    }
+                    catch (SeedApiException ex) when (ex.Status is >= 400 and < 500 and not 401)
+                    {
+                        Console.WriteLine($"  Card flow not available ({ex.Message}); switching to buyer-approval orders.");
+                        useCard = false;
+                    }
+                }
+
+                if (!useCard)
+                {
+                    await CreateApprovalOrderAsync(spec, seeded, ct);
+                }
+
+                if (seeded.Status == "CAPTURED" && spec.RefundAfterCapture is { } refund)
+                {
+                    await RefundAsync(seeded, refund, ct);
+                }
+            }
+            catch (SeedApiException ex)
+            {
+                seeded.Status = "FAILED";
+                seeded.Error = ex.Message;
+                output.Warnings.Add($"Order {spec.Key}: {ex.Message}");
+            }
+
+            Console.WriteLine($"  {spec.Key,-20} {seeded.Reference,-14} {seeded.Status,-24} {seeded.OrderId}");
+        }
+
+        output.OrderFlow = output.Orders.Values.Any(o => o.Status == "AWAITING_BUYER_APPROVAL") ? "buyer-approval" : "card";
+        await SaveAsync(outputPath, output, ct);
+        PrintNextSteps(output, outputPath);
+        Console.WriteLine("Restart the API so the shop picks up the new orders.");
+        return missing.Any(s => output.Orders[s.Key].Status == "FAILED") ? 2 : 0;
+    }
+
     /// <summary>Read-only: shows each seeded capture's live status at PayPal (the dashboard can lag).</summary>
     public async Task<int> StatusAsync(string outputPath, CancellationToken ct)
     {

@@ -98,6 +98,47 @@ public sealed class ShopSeederTests : IDisposable
     }
 
     [Fact]
+    public async Task Orders_added_to_the_seed_later_join_an_existing_shop_once_with_their_payment_and_refund_booked()
+    {
+        await ShopFixtures.SeedAsync(_testDb, _time);
+        var seed = ShopFixtures.Seed();
+        seed.Orders["eval_partial"] = new("5EV12345AB1234567", "6EV12345AB1234567", "PARTIALLY_REFUNDED", "USD", 80.00m, "Cushion covers (pair)", "SP-DVAN-1011", "7EV12345AB1234567", 30.00m);
+        seed.Orders["video_partial"] = new("5VD12345AB1234567", "6VD12345AB1234567", "PARTIALLY_REFUNDED", "USD", 80.00m, "Cushion covers (pair)", "SP-DVAN-1012", "7VD12345AB1234567", 30.00m);
+
+        for (var run = 0; run < 2; run++)
+        {
+            await using var db = _testDb.CreateContext();
+            await ShopFixtures.Seeder(db, _time).SeedAsync(seed, CancellationToken.None);
+        }
+
+        var orders = await OrdersAsync();
+        Assert.Equal(12, orders.Count);
+        var forEval = orders.Single(o => o.OrderNumber == "SP-DVAN-1011");
+        Assert.Equal("Alice Carter", forEval.Customer!.Name);
+        Assert.Equal(("6EV12345AB1234567", 80.00m), (forEval.PayPalCaptureId, forEval.LedgerEntries.Single(e => e.Type == LedgerEntryType.Payment).Amount));
+        Assert.Equal(("7EV12345AB1234567", 30.00m), forEval.LedgerEntries.Where(e => e.Type == LedgerEntryType.Refund).Select(e => (e.PayPalTransactionId, e.Amount)).Single());
+        Assert.Equal("John Doe", orders.Single(o => o.OrderNumber == "SP-DVAN-1012").Customer!.Name);
+
+        // The orders that were already there are untouched.
+        Assert.Equal(108.00m, orders.Single(o => o.OrderNumber == "SP-DVAN-1002").Total);
+    }
+
+    [Fact]
+    public async Task Orders_still_waiting_for_a_capture_are_not_added_to_the_shop()
+    {
+        await ShopFixtures.SeedAsync(_testDb, _time);
+        var seed = ShopFixtures.Seed();
+        seed.Orders["video_partial"] = new("5VD12345AB1234567", null, "AWAITING_BUYER_APPROVAL", "USD", 80.00m, "Cushion covers (pair)", "SP-DVAN-1012", null, 30.00m);
+
+        await using (var db = _testDb.CreateContext())
+        {
+            await ShopFixtures.Seeder(db, _time).SeedAsync(seed, CancellationToken.None);
+        }
+
+        Assert.Equal(10, (await OrdersAsync()).Count);
+    }
+
+    [Fact]
     public async Task A_database_seeded_with_old_product_names_gets_the_current_English_names()
     {
         await ShopFixtures.SeedAsync(_testDb, _time);
