@@ -195,7 +195,9 @@ The repo includes a `Dockerfile` (the API also serves the built React app) and a
 3. Under **Environment → Secret Files**, add `seed-output.json` from the seed tool (step 3 above).
 4. Deploy. The hosted copy runs with `Shop__PublicDemo=true`: visitors sign in with one click as Emma or a demo customer, no password, and chat is limited to 10 messages a minute per visitor. Set a monthly spend limit for your API key in the Anthropic console.
 
-The free plan sleeps after 15 idle minutes and wakes in about a minute. Its demo database lives in the container and is rebuilt from `seed-output.json` on every start; PayPal sandbox data is not reset, so a refund a visitor approves stays refunded.
+It also runs with `Shop__DryRunApprovals=true`: approving a refund or reminder runs every check against live PayPal data (still refundable? within the remaining amount and the limits? invoice still unpaid?) but skips the PayPal write itself, and the card says *not sent*. The shared sandbox data therefore stays the same for every visitor. Locally the setting is off, so approvals really refund in the sandbox.
+
+The free plan sleeps after 15 idle minutes and wakes in about a minute. Its demo database lives in the container and is rebuilt from `seed-output.json` on every start. Refunds SellerPilot made earlier carry their action ID in PayPal's `custom_id`, so a fresh start books them again from PayPal's own data, and reconciliation shows only the planted mismatches.
 
 ## Tests
 

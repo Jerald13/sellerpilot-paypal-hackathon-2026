@@ -96,16 +96,16 @@ export function DemoHome({ onSellerSignedIn }: Props) {
         <h3>A 3-minute tour</h3>
         <ol>
           <li>
-            As <b>John Doe</b>, ask the assistant: <i>“My cushion covers arrived torn. Can I get a refund for order SP-DVAN-1013?”</i> and request the refund it offers.
+            As <b>Alice Carter</b>, ask the assistant: <i>“My cushion covers arrived torn. Can I get USD 60 back for order SP-DVAN-1011?”</i> It offers the most the policy allows; request it.
           </li>
           <li>
-            Sign out, sign in as the <b>shop owner</b>, and approve John's request in <b>Approvals</b>. Only then does PayPal get called.
+            Sign out, sign in as the <b>shop owner</b>, and approve Alice's request in <b>Approvals</b>. The backend re-checks it against PayPal first. On this public demo the PayPal call itself is skipped, so the order stays the same for the next visitor.
           </li>
           <li>
             Ask the assistant <i>“Which invoices are still unpaid?”</i>, then <i>“Send a polite reminder to all of them.”</i>
           </li>
           <li>
-            Open <b>Reconciliation</b> and click <b>Run reconciliation</b>: it finds four planted mismatches between the books and PayPal.
+            Open <b>Reconciliation</b> and click <b>Run reconciliation</b>: it finds the planted mismatches between the shop's books and PayPal.
           </li>
         </ol>
         <p className="muted small">

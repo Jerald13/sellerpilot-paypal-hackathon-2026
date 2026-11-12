@@ -15,6 +15,7 @@ const statusLabel: Record<PendingAction['status'], string> = {
   Rejected: 'Rejected',
   Executed: 'Done',
   Failed: 'Failed',
+  NotSent: 'Approved · public demo, not sent to PayPal',
 }
 
 const typeLabel: Record<PendingAction['type'], string> = {
@@ -110,6 +111,10 @@ export function ActionCard({ action, busy, onApprove, onReject, onReturnReceived
           )}
           {action.status === 'Executed' && action.type === 'InvoiceReminder' && <> · PayPal emailed the reminder to the customer</>}
           {action.status === 'Executed' && action.type === 'BooksCorrection' && <> · recorded in the books</>}
+          {action.status === 'NotSent' && action.type === 'Refund' && (
+            <> · re-checked against PayPal; would have refunded {formatMoney(action.amount, action.currency)} on capture <code>{action.targetId}</code></>
+          )}
+          {action.status === 'NotSent' && action.type === 'InvoiceReminder' && <> · re-checked against PayPal; PayPal would have emailed the reminder</>}
           {action.error && <div className="error-text">{action.error}</div>}
           {action.decidedAt && <div className="muted small">{formatTime(action.decidedAt)}</div>}
         </div>

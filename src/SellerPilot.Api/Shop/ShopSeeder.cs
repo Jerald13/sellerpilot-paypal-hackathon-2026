@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SellerPilot.Api.Configuration;
 using SellerPilot.Api.Data;
+using SellerPilot.Api.PayPal;
+using SellerPilot.Api.PayPal.Models;
 
 namespace SellerPilot.Api.Shop;
 
@@ -13,7 +15,7 @@ public sealed record ShopSeedResult(bool Seeded, string Message);
 /// Creates the demo shop (customers, products, orders, payment history) once, from seed-output.json.
 /// Runs at startup; does nothing if the shop already has customers, except keeping demo passwords in sync.
 /// </summary>
-public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, TimeProvider time, ILogger<ShopSeeder> logger)
+public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, TimeProvider time, ILogger<ShopSeeder> logger, IPayPalReadClient? paypalRead = null)
 {
     private readonly PasswordHasher<Customer> _hasher = new();
 
@@ -121,6 +123,7 @@ public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, T
         await db.SaveChangesAsync(ct);
 
         var backfilled = await BackfillExecutedRefundsAsync(ct);
+        backfilled += await BookSellerPilotRefundsFromPayPalAsync(orders, ct);
         await ApplyDemoPasswordsAsync(ct);
         logger.LogInformation("Shop data created: {Orders} orders, {Backfilled} executed refunds posted to the books", orders.Count, backfilled);
         return new ShopSeedResult(true, $"Created {customers.Count} customers and {orders.Count} orders.");
@@ -217,6 +220,69 @@ public sealed class ShopSeeder(AppDbContext db, IOptions<ShopOptions> options, T
     }
 
     /// <summary>Refunds SellerPilot executed before the books existed belong in the books too.</summary>
+    /// <summary>
+    /// A freshly built shop (the hosted demo starts with an empty database on every restart) would not know the refunds
+    /// SellerPilot executed in earlier sessions, and reconciliation would report them as missing from the books. Every
+    /// refund SellerPilot sends carries its action ID in PayPal's custom_id, so those refunds are recognised in PayPal's
+    /// own data and booked. Refunds made elsewhere (no action ID, e.g. the planted dashboard refund) stay out of the books.
+    /// If PayPal can't be reached, the shop is still created; reconciliation will then simply show those refunds.
+    /// </summary>
+    private async Task<int> BookSellerPilotRefundsFromPayPalAsync(IReadOnlyList<ShopOrder> orders, CancellationToken ct)
+    {
+        if (paypalRead is null)
+        {
+            return 0;
+        }
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        var booked = 0;
+        foreach (var order in orders.Where(o => o.PayPalOrderId is not null && o.PayPalCaptureId is not null))
+        {
+            try
+            {
+                var paypal = await paypalRead.GetOrderAsync(order.PayPalOrderId!, timeout.Token);
+                var refunds = (paypal?.PurchaseUnits ?? [])
+                    .SelectMany(u => u.Payments?.Refunds ?? [])
+                    .Where(r => Guid.TryParse(r.CustomId, out _)
+                        && r.Status is RefundStatuses.Completed or RefundStatuses.Pending
+                        && r.Amount is not null && r.Amount.TryGetAmount(out _));
+                foreach (var refund in refunds)
+                {
+                    if (await db.LedgerEntries.AnyAsync(e => e.PayPalTransactionId == refund.Id, timeout.Token))
+                    {
+                        continue;
+                    }
+
+                    refund.Amount!.TryGetAmount(out var amount);
+                    db.LedgerEntries.Add(new LedgerEntry
+                    {
+                        ShopOrderId = order.Id,
+                        Type = LedgerEntryType.Refund,
+                        Amount = amount,
+                        Currency = refund.Amount.CurrencyCode ?? order.Currency,
+                        PayPalTransactionId = refund.Id,
+                        Source = LedgerSources.SellerPilot,
+                        RecordedAt = DateTime.TryParse(refund.CreateTime, null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var at) ? at : time.GetUtcNow().UtcDateTime,
+                        Note = $"Approved action {refund.CustomId}",
+                    });
+                    booked++;
+                }
+            }
+            catch (Exception ex) when (ex is PayPalApiException or PayPalConfigurationException or HttpRequestException or OperationCanceledException)
+            {
+                logger.LogWarning("Could not read PayPal order {OrderId} to book earlier SellerPilot refunds: {Error}", order.PayPalOrderId, ex.Message);
+                if (timeout.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        return booked;
+    }
+
     private async Task<int> BackfillExecutedRefundsAsync(CancellationToken ct)
     {
         var executed = await db.PendingActions.AsNoTracking()

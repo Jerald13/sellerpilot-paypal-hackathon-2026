@@ -35,5 +35,11 @@ public sealed class ShopOptions
     /// <summary>Public demo only: chat messages allowed per client address per minute (both assistants together).</summary>
     public int PublicDemoChatPerMinute { get; set; } = 10;
 
+    /// <summary>
+    /// Hosted public demo: approving a refund or reminder runs every check against PayPal but skips the PayPal write,
+    /// so the shared sandbox data stays the same for every visitor (status NotSent). Off by default.
+    /// </summary>
+    public bool DryRunApprovals { get; set; }
+
     public bool HasDemoPassword => !string.IsNullOrWhiteSpace(DemoPassword);
 }

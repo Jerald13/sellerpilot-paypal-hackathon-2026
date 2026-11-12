@@ -27,7 +27,7 @@ public sealed class ApprovalServiceTests : IDisposable
 
     public void Dispose() => _testDb.Dispose();
 
-    private ApprovalService CreateService(AppDbContext db) => new(
+    private ApprovalService CreateService(AppDbContext db, bool dryRun = false) => new(
         db,
         _read,
         _write,
@@ -36,7 +36,8 @@ public sealed class ApprovalServiceTests : IDisposable
         new AuditService(db, _time, NullLogger<AuditService>.Instance),
         new LedgerService(db, _time),
         _time,
-        NullLogger<ApprovalService>.Instance);
+        NullLogger<ApprovalService>.Instance,
+        Options.Create(new ShopOptions { DryRunApprovals = dryRun }));
 
     private async Task<PendingAction> AddRefundProposalAsync(decimal amount = 45.00m)
     {
@@ -112,6 +113,50 @@ public sealed class ApprovalServiceTests : IDisposable
 
         var events = await db.AuditLogs.OrderBy(l => l.Id).Select(l => l.Event).ToListAsync();
         Assert.Equal(new[] { AuditEvents.ActionApproved, AuditEvents.ActionExecuted }, events);
+    }
+
+    [Fact]
+    public async Task In_the_public_demo_dry_run_an_approved_refund_is_checked_but_never_sent_or_booked()
+    {
+        var action = await AddRefundProposalAsync();
+        GivenCaptureState();
+        await using var db = _testDb.CreateContext();
+
+        var result = await CreateService(db, dryRun: true).ApproveAsync(action.Id, CancellationToken.None);
+
+        Assert.Equal(ActionStatus.NotSent, result.Action!.Status);
+        Assert.Null(result.Action.PayPalResultId);
+        await _read.Received().GetCaptureAsync(PayPalFixtures.CaptureId, Arg.Any<CancellationToken>());
+        await _write.DidNotReceiveWithAnyArgs().RefundCaptureAsync(default!, default!, default!, default);
+        Assert.Empty(await db.LedgerEntries.ToListAsync());
+        var events = await db.AuditLogs.OrderBy(l => l.Id).Select(l => l.Event).ToListAsync();
+        Assert.Equal(new[] { AuditEvents.ActionApproved, AuditEvents.ActionNotSent }, events);
+    }
+
+    [Fact]
+    public async Task The_dry_run_still_blocks_a_refund_that_PayPal_would_refuse()
+    {
+        var action = await AddRefundProposalAsync();
+        GivenCaptureState("REFUNDED", PayPalFixtures.Refund("R9AAAAAAAAAAAAAAA", "45.00"));
+        await using var db = _testDb.CreateContext();
+
+        var result = await CreateService(db, dryRun: true).ApproveAsync(action.Id, CancellationToken.None);
+
+        Assert.Equal(ActionStatus.Failed, result.Action!.Status);
+        Assert.StartsWith("Blocked at approval", result.Action.Error);
+    }
+
+    [Fact]
+    public async Task In_the_dry_run_an_approved_reminder_is_not_emailed()
+    {
+        var action = await AddReminderProposalAsync();
+        _read.GetInvoiceAsync(PayPalFixtures.InvoiceId, Arg.Any<CancellationToken>()).Returns(PayPalFixtures.Parse<PayPalInvoice>(PayPalFixtures.Invoice()));
+        await using var db = _testDb.CreateContext();
+
+        var result = await CreateService(db, dryRun: true).ApproveAsync(action.Id, CancellationToken.None);
+
+        Assert.Equal(ActionStatus.NotSent, result.Action!.Status);
+        await _write.DidNotReceiveWithAnyArgs().SendInvoiceReminderAsync(default!, default!, default!, default);
     }
 
     [Fact]

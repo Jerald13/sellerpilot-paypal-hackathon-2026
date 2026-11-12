@@ -93,12 +93,12 @@ export default function App() {
           </div>
         </main>
       )}
-      {user && user.role === 'seller' && <BackOffice onSignedOut={() => setUser(null)} />}
+      {user && user.role === 'seller' && <BackOffice onSignedOut={() => setUser(null)} dryRun={health?.shop?.dryRunApprovals === true} />}
     </div>
   )
 }
 
-function BackOffice({ onSignedOut }: { onSignedOut: () => void }) {
+function BackOffice({ onSignedOut, dryRun }: { onSignedOut: () => void; dryRun: boolean }) {
   const [tab, setTab] = useState<Tab>('assistant')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [conversationId, setConversationId] = useState<string | null>(() => sessionStorage.getItem(conversationKey))
@@ -203,6 +203,11 @@ function BackOffice({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <>
+      {dryRun && (
+        <div className="demo-banner" role="note">
+          <strong>Public demo:</strong> approvals are checked against PayPal but not sent, so nothing is refunded or emailed and the demo stays the same for every visitor.
+        </div>
+      )}
       <nav className="tabs subnav" aria-label="Back office sections">
         {tabs.map((t) => (
           <button

@@ -312,4 +312,5 @@ const requestStatus: Partial<Record<MyRefundRequest['status'], string>> = {
   Executed: 'Refunded',
   Rejected: 'Declined',
   Failed: 'Could not be refunded',
+  NotSent: 'Approved (public demo: not refunded)',
 }

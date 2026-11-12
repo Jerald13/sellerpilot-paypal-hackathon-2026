@@ -23,6 +23,7 @@ public static class AuditEvents
     public const string ActionRejected = "ActionRejected";
     public const string ActionExecuted = "ActionExecuted";
     public const string ActionFailed = "ActionFailed";
+    public const string ActionNotSent = "ActionNotSent";
     public const string AgentStepLimitReached = "AgentStepLimitReached";
     public const string LlmRefusal = "LlmRefusal";
     public const string LedgerPosted = "LedgerPosted";

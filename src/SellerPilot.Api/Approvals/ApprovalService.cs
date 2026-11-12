@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SellerPilot.Api.Agent.Tools;
+using SellerPilot.Api.Configuration;
 using SellerPilot.Api.Audit;
 using SellerPilot.Api.Data;
 using SellerPilot.Api.Guardrails;
@@ -46,8 +48,11 @@ public sealed class ApprovalService(
     IAuditService audit,
     ILedgerService ledger,
     TimeProvider time,
-    ILogger<ApprovalService> logger) : IApprovalService
+    ILogger<ApprovalService> logger,
+    IOptions<ShopOptions>? shopOptions = null) : IApprovalService
 {
+    private bool DryRun => shopOptions?.Value.DryRunApprovals == true;
+
     public async Task<DecisionResult> ApproveAsync(Guid actionId, CancellationToken ct)
     {
         var claim = await ClaimAsync(actionId, [ActionStatus.Pending], ActionStatus.Approved, ct);
@@ -71,6 +76,13 @@ public sealed class ApprovalService(
             {
                 await audit.LogAsync(AuditActors.System, AuditEvents.GuardrailBlocked, new { actionId, stage = "approval", reasons = check.Reasons }, done);
                 return await FinishAsync(action, ActionStatus.Failed, null, "Blocked at approval: " + string.Join(" ", check.Reasons));
+            }
+
+            if (DryRun && action.Type is ActionType.Refund or ActionType.InvoiceReminder)
+            {
+                // Hosted public demo: every check above ran against live PayPal data; only the write is skipped,
+                // so the shared sandbox data stays the same for the next visitor. Nothing goes into the books.
+                return await FinishAsync(action, ActionStatus.NotSent, null, null);
             }
 
             switch (action.Type)
@@ -292,7 +304,12 @@ public sealed class ApprovalService(
         await db.SaveChangesAsync(CancellationToken.None);
         await audit.LogAsync(
             AuditActors.System,
-            status == ActionStatus.Executed ? AuditEvents.ActionExecuted : AuditEvents.ActionFailed,
+            status switch
+            {
+                ActionStatus.Executed => AuditEvents.ActionExecuted,
+                ActionStatus.NotSent => AuditEvents.ActionNotSent,
+                _ => AuditEvents.ActionFailed,
+            },
             new { actionId = action.Id, type = action.Type, action.TargetId, action.Amount, action.Currency, paypalResultId, error },
             CancellationToken.None);
         return new DecisionResult(DecisionOutcome.Done, action);

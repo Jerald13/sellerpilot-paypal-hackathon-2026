@@ -43,10 +43,12 @@ public static class PayPalFixtures
         string currency = "USD",
         string status = "COMPLETED",
         string captureId = CaptureId,
-        string createTime = "2026-10-22T09:30:00Z") => $$"""
+        string createTime = "2026-10-22T09:30:00Z",
+        string? customId = null) => $$"""
         {
           "id": "{{refundId}}",
           "status": "{{status}}",
+          "custom_id": {{(customId is null ? "null" : $"\"{customId}\"")}},
           "amount": { "currency_code": "{{currency}}", "value": "{{amount}}" },
           "create_time": "{{createTime}}",
           "update_time": "{{createTime}}",

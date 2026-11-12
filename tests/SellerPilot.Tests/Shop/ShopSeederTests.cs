@@ -1,4 +1,11 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using NSubstitute.ExceptionExtensions;
+using SellerPilot.Api.PayPal;
+using SellerPilot.Api.PayPal.Models;
+using SellerPilot.Api.Shop;
 using Microsoft.EntityFrameworkCore;
 using SellerPilot.Api.Data;
 using SellerPilot.Tests.TestSupport;
@@ -95,6 +102,54 @@ public sealed class ShopSeederTests : IDisposable
         await using var db = _testDb.CreateContext();
         Assert.Equal(4, await db.Customers.CountAsync());
         Assert.Equal(10, await db.ShopOrders.CountAsync());
+    }
+
+    [Fact]
+    public async Task A_fresh_shop_books_the_refunds_SellerPilot_made_earlier_but_not_refunds_made_elsewhere()
+    {
+        var read = Substitute.For<IPayPalReadClient>();
+        read.GetOrderAsync(default!, default).ReturnsForAnyArgs(PayPalFixtures.Parse<PayPalOrder>(PayPalFixtures.Order()));
+        var actionId = Guid.NewGuid().ToString();
+        // SP-DVAN-1006: the seed's own refund (no action ID, already in the books) plus one SellerPilot executed later.
+        read.GetOrderAsync("9P344288XW6898834", Arg.Any<CancellationToken>()).Returns(PayPalFixtures.Parse<PayPalOrder>(PayPalFixtures.Order(
+            orderId: "9P344288XW6898834",
+            capture: PayPalFixtures.Capture(captureId: "30379916G6480042M", orderId: "9P344288XW6898834", amount: "80.00"),
+            refunds: [
+                PayPalFixtures.Refund("9YK317787A915471L", "30.00", captureId: "30379916G6480042M"),
+                PayPalFixtures.Refund("9MX373558K1341746", "50.00", captureId: "30379916G6480042M", createTime: "2026-11-09T09:53:00Z", customId: actionId),
+            ])));
+        // SP-DVAN-1005: the planted refund made in the PayPal dashboard (no action ID) must stay out of the books.
+        read.GetOrderAsync("7R3994090M8505904", Arg.Any<CancellationToken>()).Returns(PayPalFixtures.Parse<PayPalOrder>(PayPalFixtures.Order(
+            orderId: "7R3994090M8505904",
+            capture: PayPalFixtures.Capture(captureId: "9SJ46960HW343273P", orderId: "7R3994090M8505904", amount: "25.00"),
+            refunds: [PayPalFixtures.Refund("6X698339418911635", "25.00", captureId: "9SJ46960HW343273P")])));
+
+        await using (var db = _testDb.CreateContext())
+        {
+            await new ShopSeeder(db, Options.Create(ShopFixtures.Options()), _time, NullLogger<ShopSeeder>.Instance, read)
+                .SeedAsync(ShopFixtures.Seed(), CancellationToken.None);
+        }
+
+        var orders = await OrdersAsync();
+        var partly = orders.Single(o => o.OrderNumber == "SP-DVAN-1006").LedgerEntries.Where(e => e.Type == LedgerEntryType.Refund).ToList();
+        Assert.Equal(["9YK317787A915471L", "9MX373558K1341746"], partly.OrderBy(e => e.RecordedAt).Select(e => e.PayPalTransactionId));
+        Assert.Equal((50.00m, LedgerSources.SellerPilot), (partly[^1].Amount, partly[^1].Source));
+        Assert.DoesNotContain(orders.Single(o => o.OrderNumber == "SP-DVAN-1005").LedgerEntries, e => e.Type == LedgerEntryType.Refund);
+    }
+
+    [Fact]
+    public async Task The_shop_is_still_created_when_PayPal_cannot_be_reached()
+    {
+        var read = Substitute.For<IPayPalReadClient>();
+        read.GetOrderAsync(default!, default).ThrowsAsyncForAnyArgs(new HttpRequestException("no network"));
+
+        await using (var db = _testDb.CreateContext())
+        {
+            await new ShopSeeder(db, Options.Create(ShopFixtures.Options()), _time, NullLogger<ShopSeeder>.Instance, read)
+                .SeedAsync(ShopFixtures.Seed(), CancellationToken.None);
+        }
+
+        Assert.Equal(10, (await OrdersAsync()).Count);
     }
 
     [Fact]

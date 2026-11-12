@@ -2,7 +2,7 @@
 // Sign-in uses an HttpOnly cookie; fetch sends it automatically because the UI and API share an origin (Vite proxy).
 
 export type ActionType = 'Refund' | 'InvoiceReminder' | 'BooksCorrection'
-export type ActionStatus = 'Pending' | 'Approved' | 'Rejected' | 'Executed' | 'Failed' | 'AwaitingReturn'
+export type ActionStatus = 'Pending' | 'Approved' | 'Rejected' | 'Executed' | 'Failed' | 'AwaitingReturn' | 'NotSent'
 
 export interface SecurityFlag {
   source: string
@@ -92,7 +92,7 @@ export interface Health {
   }
   llm: { provider: string; model: string; configured: boolean }
   auth?: { configured: boolean; publicDemo?: boolean }
-  shop?: { seeded: boolean; shopName: string }
+  shop?: { seeded: boolean; shopName: string; dryRunApprovals?: boolean }
 }
 
 export interface CurrentUser {

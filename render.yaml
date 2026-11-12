@@ -13,6 +13,9 @@ services:
     envVars:
       - key: Shop__PublicDemo
         value: "true"
+      # Approvals are checked against PayPal but not sent, so the shared sandbox data never gets used up.
+      - key: Shop__DryRunApprovals
+        value: "true"
       - key: Shop__SeedFile
         value: /etc/secrets/seed-output.json
       - key: Llm__Provider

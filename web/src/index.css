@@ -453,6 +453,16 @@ code {
   opacity: 0.7;
 }
 
+/* Public-demo dry run: approved and checked, but nothing was sent to PayPal. */
+.card-notsent {
+  background: var(--accent-soft, rgba(79, 140, 255, 0.1));
+  border-color: transparent;
+}
+
+.result-notsent strong {
+  color: var(--accent);
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -1371,4 +1381,14 @@ code {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: #070b14;
+}
+
+/* Hosted public demo: approvals are a dry run. */
+.demo-banner {
+  margin: 0.75rem 1.5rem 0;
+  padding: 0.5rem 0.9rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.85rem;
 }

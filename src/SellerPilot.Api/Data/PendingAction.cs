@@ -19,6 +19,9 @@ public enum ActionStatus
 
     /// <summary>A customer refund that needs the item back first; the seller marks the return as received, which moves it to Pending.</summary>
     AwaitingReturn,
+
+    /// <summary>Public-demo dry run: approved and re-checked against PayPal, but the PayPal call was not made.</summary>
+    NotSent,
 }
 
 public static class ActionRequesters

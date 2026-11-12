@@ -53,7 +53,7 @@ public sealed class HealthController(AppDbContext db, IPayPalTokenProvider token
             Llm = new { Provider = llm.ProviderName, llm.Model, Configured = llmConfigured },
             // Sign-in and shop data are reported but don't make the API unhealthy: the agent works without them.
             Auth = new { Configured = shop.Value.HasDemoPassword || shop.Value.PublicDemo, shop.Value.PublicDemo },
-            Shop = new { Seeded = databaseOk && await db.Customers.AnyAsync(ct), shop.Value.ShopName },
+            Shop = new { Seeded = databaseOk && await db.Customers.AnyAsync(ct), shop.Value.ShopName, shop.Value.DryRunApprovals },
         };
 
         return healthy ? Ok(body) : StatusCode(StatusCodes.Status503ServiceUnavailable, body);
